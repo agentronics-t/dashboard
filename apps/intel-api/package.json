@@ -1,0 +1,31 @@
+{
+  "name": "intel-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --sourcemap --outfile=dist/index.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "test": "node --test --experimental-strip-types --env-file-if-exists=.env \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@agentronics/intel-schema": "workspace:*",
+    "@google-cloud/opentelemetry-cloud-trace-exporter": "^3.0.0",
+    "@google-cloud/secret-manager": "^6.1.3",
+    "@google-cloud/tasks": "^6.2.3",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/resources": "^2.8.0",
+    "@opentelemetry/sdk-trace-node": "^2.8.0",
+    "drizzle-orm": "^0.44.7",
+    "fastify": "^5.3.0",
+    "jose": "^6.2.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}

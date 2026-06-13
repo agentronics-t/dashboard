@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.turbo/
+.env
+.env.local
+*.log
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+tmp/
+
+# Next.js
+.next/
+.vercel/
+next-env.d.ts
+*.tsbuildinfo
+
+# misc
+.DS_Store

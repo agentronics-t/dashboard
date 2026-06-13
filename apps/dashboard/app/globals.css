@@ -1,0 +1,103 @@
+/* Agentronics design tokens — ported verbatim from the design system
+   (DM Sans + JetBrains Mono, indigo #5a4fd9 / #736ced, amber, flat hairlines). */
+
+@font-face {
+  font-family: "DM Sans";
+  src: url("/fonts/DMSans-Variable.ttf") format("truetype-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Variable.ttf") format("truetype-variations");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --neutral-200: #dadde5;
+  --neutral-300: #bcc2ce;
+
+  --canvas: #f6f7f9;
+  --surface: #ffffff;
+  --surface-raised: #f6f7f9;
+  --border: #e3e6ec;
+  --border-strong: #cbd0da;
+  --content: #0e1017;
+  --content-secondary: #515a6c;
+  --content-muted: #828a9b;
+
+  --brand: #736ced;
+  --brand-solid: #5a4fd9;
+  --brand-soft: #f0effe;
+  --accent: #ff9e1c;
+  --accent-content: #06070e;
+  --ring: #736ced;
+
+  --success: #18935a; --success-bg: #e7f6ee;
+  --warning: #d97706; --warning-bg: #fdf2e0;
+  --danger: #d92d3c;  --danger-bg: #fdecec;
+  --info: #2081c3;    --info-bg: #e6f2fb;
+
+  --code-bg: #0e1017; --code-fg: #e4e2fd;
+
+  --font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: 7px; --radius-md: 9px; --radius-lg: 12px; --radius-xl: 14px; --radius-pill: 999px;
+  --shadow-raise: 0 8px 24px -12px rgba(14,16,23,.18);
+  --shadow-glow: 0 8px 24px -10px var(--brand);
+  --ring-focus: 0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent);
+  --dur-fast: .15s; --dur-med: .25s; --ease-out: cubic-bezier(0.2,0,0,1);
+}
+
+.dark {
+  --neutral-200: #262b35;
+  --neutral-300: #3b4350;
+  --canvas: #06070e;
+  --surface: #0e1017;
+  --surface-raised: #181c24;
+  --border: #262b35;
+  --border-strong: #3b4350;
+  --content: #f4f5f8;
+  --content-secondary: #b6bcca;
+  --content-muted: #8b93a4;
+  --brand: #8d85f2;
+  --brand-solid: #5a4fd9;
+  --brand-soft: #1a1840;
+  --accent: #ffae33;
+  --success: #34d399; --success-bg: #0e2a1d;
+  --warning: #fbbf24; --warning-bg: #2e2106;
+  --danger: #f76e72;  --danger-bg: #2c1315;
+  --info: #38bdf8;    --info-bg: #0a2433;
+  --code-bg: #0a0b12; --code-fg: #cbc7fb;
+}
+
+* { box-sizing: border-box; }
+html, body { padding: 0; margin: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--canvas);
+  color: var(--content);
+  line-height: 1.5;
+  font-size: 14px;
+  transition: background var(--dur-med), color var(--dur-med);
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd, samp { font-family: var(--font-mono); }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; }
+
+.ag-nav-btn {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 9px 11px; border: none; background: none; cursor: pointer;
+  border-radius: var(--radius-md); color: var(--content-secondary);
+  font-size: 14px; font-weight: 600; text-align: left;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.ag-nav-btn:hover { background: var(--surface-raised); color: var(--content); }
+.ag-nav-btn[data-active="true"] { background: var(--brand-soft); color: var(--brand-solid); }
+.ag-row:hover { background: var(--surface-raised); }
+::placeholder { color: var(--content-muted); }

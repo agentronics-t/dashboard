@@ -1,0 +1,7 @@
+packages:
+  - apps/intel-api
+  - apps/intel-worker
+  - apps/dashboard
+  - packages/*
+onlyBuiltDependencies:
+  - esbuild
