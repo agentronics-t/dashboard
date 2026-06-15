@@ -22,5 +22,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 
-  return hasClerk ? <ClerkProvider>{body}</ClerkProvider> : body;
+  // sign-in URL is overridable via env so it can point at the landing page
+  // once that hosts auth; defaults to the dashboard-hosted /sign-in.
+  return hasClerk ? (
+    <ClerkProvider
+      signInUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || "/sign-in"}
+      signUpUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || "/sign-up"}
+    >
+      {body}
+    </ClerkProvider>
+  ) : (
+    body
+  );
 }

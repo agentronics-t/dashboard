@@ -1,5 +1,5 @@
 import { Card, CardTitle, fmt, Kpi, PageHeader } from "@/components/ui";
-import { getUsage } from "@/lib/queries";
+import { getConnectors, getUsage } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ async function getProfile() {
   const { currentUser } = await import("@clerk/nextjs/server");
   const user = await currentUser();
   return {
-    name: user?.fullName || user?.username || "Account",
+    name: user?.fullName || user?.username || "—",
     email: user?.primaryEmailAddress?.emailAddress || "—",
     clerk: true
   };
@@ -19,7 +19,12 @@ async function getProfile() {
 
 export default async function AccountPage() {
   const tenantId = await getTenantId();
-  const [usage, profile] = await Promise.all([getUsage(tenantId), getProfile()]);
+  const [usage, profile, connectors] = await Promise.all([
+    getUsage(tenantId),
+    getProfile(),
+    getConnectors(tenantId)
+  ]);
+  const connected = connectors.filter((c) => c.secret_ref).length;
 
   return (
     <>
@@ -37,7 +42,7 @@ export default async function AccountPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 4 }}>
         <Kpi label="Plan" value="Free trial" sub="upgrade in billing" />
         <Kpi label="Governed calls" value={fmt(usage.governedCalls)} sub={`period ${usage.period}`} />
-        <Kpi label="Connectors" value="—" sub="see Settings" />
+        <Kpi label="Connected plugins" value={String(connected)} sub={`${connectors.length} configured`} />
       </div>
     </>
   );

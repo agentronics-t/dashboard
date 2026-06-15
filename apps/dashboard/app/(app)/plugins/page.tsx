@@ -1,3 +1,4 @@
+import { PluginCard, type PluginMeta } from "@/components/PluginCard";
 import { RunImportButton } from "@/components/RunImportButton";
 import { Badge, Card, CardTitle, PageHeader } from "@/components/ui";
 import { getConnectors, getJobs } from "@/lib/queries";
@@ -5,45 +6,65 @@ import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
+const PLUGINS: PluginMeta[] = [
+  {
+    type: "cloudflare",
+    name: "Cloudflare",
+    blurb: "Bot & AI traffic from the GraphQL Analytics API plus AI Crawl Control — requests, blocking, and enforcement.",
+    configHint: '{"zone_tag":"<your-zone-id>"}',
+    credentialHint: "API token (Analytics:Read)"
+  },
+  {
+    type: "profound",
+    name: "Profound",
+    blurb: "Answer-engine visibility — per-request records of how AI assistants reference your site.",
+    configHint: "{}",
+    credentialHint: "API key"
+  },
+  {
+    type: "scrunch",
+    name: "Scrunch",
+    blurb: "Answer-engine monitoring — queries and responses across platforms over a 90-day window.",
+    configHint: "{}",
+    credentialHint: "API key"
+  }
+];
+
 function ago(d: string | null) {
-  if (!d) return "—";
-  return new Date(d).toLocaleString();
+  return d ? new Date(d).toLocaleString() : "—";
 }
 
-export default async function ActivityPage() {
+export default async function PluginsPage() {
   const tenantId = await getTenantId();
-  const [jobs, connectors] = await Promise.all([getJobs(tenantId), getConnectors(tenantId)]);
+  const [connectors, jobs] = await Promise.all([getConnectors(tenantId), getJobs(tenantId)]);
+  const byType = new Map(connectors.map((c) => [c.type, c]));
   const primary = connectors[0];
 
   return (
     <>
       <PageHeader
-        title="Activity"
-        subtitle="Pipeline jobs and connector status"
+        title="Plugins"
+        subtitle="Connect your data sources — each plugin imports agent traffic into the platform"
         action={<RunImportButton connectorId={primary?.id} disabled={!primary} />}
       />
 
-      <Card style={{ marginBottom: 18 }}>
-        <CardTitle>Connectors</CardTitle>
-        {connectors.length === 0 && (
-          <div style={{ color: "var(--content-muted)", fontSize: 14 }}>
-            No connectors yet — add one in Settings to start importing.
-          </div>
-        )}
-        {connectors.map((c) => (
-          <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 6px", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>{c.type}</span>
-              <Badge kind={c.secret_ref ? "succeeded" : "warning"}>{c.secret_ref ? "credential set" : "no credential"}</Badge>
-            </div>
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--content-muted)" }}>{c.id.slice(0, 8)}</code>
-          </div>
-        ))}
-      </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginBottom: 22 }}>
+        {PLUGINS.map((p) => {
+          const conn = byType.get(p.type);
+          return (
+            <PluginCard
+              key={p.type}
+              plugin={p}
+              connected={!!conn?.secret_ref}
+              config={conn?.config as Record<string, unknown> | undefined}
+            />
+          );
+        })}
+      </div>
 
       <Card>
-        <CardTitle>Recent jobs</CardTitle>
-        {jobs.length === 0 && <div style={{ color: "var(--content-muted)", fontSize: 14 }}>No jobs yet.</div>}
+        <CardTitle>Recent runs</CardTitle>
+        {jobs.length === 0 && <div style={{ color: "var(--content-muted)", fontSize: 14 }}>No runs yet — connect a plugin and run an import.</div>}
         {jobs.length > 0 && (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>

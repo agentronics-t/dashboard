@@ -202,6 +202,11 @@ Single source of truth for build state. Read at session start; resume from the l
 
 **Status:** ✅ done (Vercel deploy + E2E pending — manual)
 
+**Post-step verification (2026-06-12):**
+- **Cloud re-verified:** intel-api `/health` 200 (public), intel-worker anon→403 (private), intel-ml job Ready, intel-watchdog cron ENABLED, import-jobs queue RUNNING.
+- **Pushed to GitHub:** `github.com/agentronics-t/dashboard` (private), branch `main`, 131 files, 2 commits. Secret scan clean (DB password only in gitignored `.env` files; `.env.example`s committed). Added root `README.md`, hardened `.gitignore` (.next/.vercel/venv/tsbuildinfo).
+- **Local browser preview verified** (real Neon, demo tenant): all pages render; sidebar matches design (logomark glow, nav, collapse, theme); **Insights shows the real `pipeline_failure` insight** from the cloud chaos test (CRITICAL badge, job uuid, NOT_FOUND error, markdown); dark mode flips correctly and persists; **Agent Chat streams a grounded retrieval-only answer** ("0 requests… Data import failed") proving question→retrieval→aggregates→stream end-to-end. Collapsed sidebar (icon-only) verified.
+
 **Next:** STEP 11 — Hardening + deploy checklist
 
 **Note:** Neon endpoint is us-east-1 (GCP stack is asia-south1). Acceptable for now; if query latency from Cloud Run matters later, create a Neon project in ap-southeast-1/asia and re-point `neon-database-url`.
