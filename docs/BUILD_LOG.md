@@ -207,6 +207,15 @@ Single source of truth for build state. Read at session start; resume from the l
 - **Pushed to GitHub:** `github.com/agentronics-t/dashboard` (private), branch `main`, 131 files, 2 commits. Secret scan clean (DB password only in gitignored `.env` files; `.env.example`s committed). Added root `README.md`, hardened `.gitignore` (.next/.vercel/venv/tsbuildinfo).
 - **Local browser preview verified** (real Neon, demo tenant): all pages render; sidebar matches design (logomark glow, nav, collapse, theme); **Insights shows the real `pipeline_failure` insight** from the cloud chaos test (CRITICAL badge, job uuid, NOT_FOUND error, markdown); dark mode flips correctly and persists; **Agent Chat streams a grounded retrieval-only answer** ("0 requests… Data import failed") proving question→retrieval→aggregates→stream end-to-end. Collapsed sidebar (icon-only) verified.
 
+**Iteration after first Vercel deploy (2026-06-12, Nithin feedback):**
+- **Auth made live:** middleware now `auth.protect()`s all routes (except `/sign-in`, `/sign-up`); added dashboard-hosted Clerk `<SignIn>`/`<SignUp>` pages; sign-in/up URLs overridable via `NEXT_PUBLIC_CLERK_SIGN_IN_URL`/`_SIGN_UP_URL` so they can point at the landing page once it hosts auth (intended flow: sign in on landing page → redirect to dashboard). UserButton in sidebar. Account page was "empty" only because no user was signed in — name/email fill from Clerk `currentUser()` post-login; connected-plugin count now real.
+- **Activity → Plugins:** new `/plugins` page with 3 source cards (Cloudflare/Profound/Scrunch), per-plugin Connect/Reconfigure (credential → Secret Manager via intel-api), "Run import now", recent-runs table. `AddConnector` removed; connector management lives only here now.
+- **Settings slimmed:** appearance (theme toggle) + pointers to Plugins; no connector management.
+- **Real logomark:** ported the faithful brand vector from `landing_page/components/ui/Logo.tsx` (theme-aware) into the sidebar, replacing the placeholder mark.
+- **SDK sidebar section:** Detect/Auth/Authz/WebMCP Tools/Knaph/Logs/Analytics added per the design, disabled with "soon" badges (no links) until the SDK backend is wired.
+- Verified in local preview (demo mode): logo, Plugins 3-card grid (Cloudflare CONNECTED from test connector, live recent-runs table), SDK section. `next build` green (14 routes). Pushed (commit b9c088e).
+- **Clerk manual step (Nithin):** ensure the Clerk instance allows the Vercel domain (`*.vercel.app` is auto-allowed for dev/`pk_test` instances; add the domain for production instances). Login goes live on the next Vercel deploy.
+
 **Next:** STEP 11 — Hardening + deploy checklist
 
 **Note:** Neon endpoint is us-east-1 (GCP stack is asia-south1). Acceptable for now; if query latency from Cloud Run matters later, create a Neon project in ap-southeast-1/asia and re-point `neon-database-url`.
