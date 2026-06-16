@@ -1,0 +1,50 @@
+name: Deploy
+
+# Tag-driven deploys via Workload Identity Federation (no long-lived SA keys).
+# Set up WIF once with infra/setup-wif.sh, then add repo variables:
+#   GCP_PROJECT, GCP_WIF_PROVIDER, GCP_DEPLOYER_SA
+# Tag a release to deploy:  git tag v0.1.0 && git push --tags
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # required for WIF
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT }}
+      REGION: asia-south1
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+      - name: Build, push, deploy all services
+        run: |
+          set -euo pipefail
+          TS=$(date +%Y%m%d-%H%M%S)
+          AR="${REGION}-docker.pkg.dev/${PROJECT}/intel"
+          for svc in intel-api intel-worker; do
+            img="$AR/$svc:$TS"
+            docker build --platform linux/amd64 --provenance=false --sbom=false \
+              -f apps/$svc/Dockerfile -t "$img" .
+            docker push "$img"
+            gcloud run services update $svc --image "$img" --region "$REGION" --project "$PROJECT" --quiet
+          done
+          imgml="$AR/intel-ml:$TS"
+          docker build --platform linux/amd64 --provenance=false --sbom=false -t "$imgml" apps/intel-ml
+          docker push "$imgml"
+          gcloud run jobs update intel-ml --image "$imgml" --region "$REGION" --project "$PROJECT" --quiet
+      - name: Smoke check API health
+        run: |
+          url=$(gcloud run services describe intel-api --region "$REGION" --project "$PROJECT" --format='value(status.url)')
+          curl -fsS "$url/health" && echo " — api healthy"

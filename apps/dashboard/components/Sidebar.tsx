@@ -72,7 +72,9 @@ export function Sidebar() {
     document.documentElement.classList.toggle("dark", next);
     try {
       localStorage.setItem("ag-theme", next ? "dark" : "light");
-    } catch {}
+    } catch {
+      /* localStorage unavailable — ignore */
+    }
   };
 
   const labelStyle: React.CSSProperties = {

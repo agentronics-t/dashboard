@@ -33,7 +33,8 @@ gcloud run deploy "${SERVICE}" \
   --service-account "${SA}" \
   --min-instances 0 \
   --max-instances 5 \
-  --memory 512Mi \
+  --concurrency 8 \
+  --memory 1Gi \
   --timeout 900 \
   --no-allow-unauthenticated \
   --set-secrets "DATABASE_URL=neon-database-url:latest" \

@@ -2,7 +2,7 @@
 // stream a grounded Gemini answer. Degrades to a retrieval-only answer when
 // Vertex isn't configured, so the feature is usable in dev.
 import { schema } from "@agentronics/intel-schema/db";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getTopAgents, getTrafficSeries } from "@/lib/queries";
 import { db, getTenantId } from "@/lib/tenant";
 import { embed, streamAnswer, vertexConfigured } from "@/lib/vertex";

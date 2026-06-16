@@ -220,6 +220,33 @@ Single source of truth for build state. Read at session start; resume from the l
 
 **Next:** STEP 11 — Hardening + deploy checklist
 
+## STEP 11 — Hardening + deploy checklist · 2026-06-16
+
+**Did:** (1) **IAM audit** (live) — each service uses its own dedicated SA, no default-compute-SA usage; least-privilege confirmed: intel-api {cloudtasks.enqueuer, cloudtrace.agent, secretmanager.admin (needed to create connector secrets), secretmanager.secretAccessor}, intel-worker {cloudtrace.agent, run.invoker, secretmanager.secretAccessor, bucket-scoped objectAdmin}, intel-ml {aiplatform.user, cloudtrace.agent, secretmanager.secretAccessor, bucket-scoped objectAdmin}. (2) **Secrets audit** — `git grep` for sk_/npg_/PRIVATE KEY across both repos → only `.env.example` placeholders; pk_live is publishable (public by design). (3) **Cloud Run hardening** — worker stays private (`--no-allow-unauthenticated`, anon→403, OIDC-only; ingress=all is required for Cloud Tasks, security is IAM not ingress), tuned worker to concurrency 8 / 1Gi (parquet buffering; queue caps dispatches at 5), min-instances 0 on both (verified). (4) **Cost guards** — GCS lifecycle applied (raw→Nearline @90d, Coldline @365d); `infra/setup-budget.sh` for the monthly budget + 50/90/100% alerts (manual: amount). (5) **CI/CD** — `.github/workflows/ci.yml` (lint·typecheck·test·docker-build on PR/push, with a throwaway Postgres for DB-backed tests) + `.github/workflows/deploy.yml` (tag `v*` → build/push/deploy all services via WIF, no SA keys) + `infra/setup-wif.sh` (pool/provider/deployer-SA, repo-scoped). (6) **Load sanity** — added 2 worker tests: 50 concurrent distinct imports all succeed each in its own job-scoped raw path with exactly 50 ML triggers; 10 simultaneous deliveries of one job → one raw key, one success (no corruption). (7) `docs/DEPLOY_CHECKLIST.md` (full pre-deploy gates). Lint cleanups: dropped unused `gte`/`eq` imports, fixed an empty catch.
+
+**Files:** `.github/workflows/{ci.yml,deploy.yml}`; `infra/{setup-wif.sh,setup-budget.sh,deploy-worker.sh}`; `apps/intel-worker/src/server.test.ts`; `apps/dashboard/{app/api/chat/route.ts,lib/tenant.ts,components/Sidebar.tsx}`; `docs/DEPLOY_CHECKLIST.md`
+
+**External steps issued (Nithin):**
+1. `./infra/setup-wif.sh project-6d96c09a-5821-4133-959 agentronics-t/dashboard` → add the 3 printed GitHub repo Variables (enables tag-deploy CI without SA keys)
+2. `./infra/setup-budget.sh 01FE97-2E43EB-0A1E34 project-6d96c09a-5821-4133-959 <AMOUNT_USD>` (e.g. 50)
+3. (CI runs automatically once this is pushed; tag `v0.1.0` to trigger the deploy workflow)
+
+**Tests run / results:** full repo `pnpm turbo build test lint` — 11/11 green; worker 21/21 incl. the 50-concurrent load test; GCS lifecycle + worker tuning verified live via gcloud; IAM/secrets audits clean; deploy/WIF/budget scripts syntax-checked.
+
+**Status:** ✅ done
+
+---
+
+## BUILD COMPLETE — platform summary
+
+All 11 steps done. The Agentronics Intelligence Platform backend + dashboard are built, tested, deployed, and live:
+- **Pipeline:** Scheduler/dashboard → intel-api (Cloud Run) → Cloud Tasks → intel-worker (private) → raw Parquet in GCS → intel-ml Cloud Run Job (normalize → ETS forecasts → Vertex Gemini insights + pgvector) → Neon serving mirror. Idempotent, traced end-to-end, alerted.
+- **Dashboard:** Next.js on Vercel (`app.agentronics.dev`), Clerk auth shared with the landing page (`www.agentronics.dev`) on the production instance, charts + forecasts + insights + streamed agent chat.
+- **Repos:** `agentronics-t/dashboard` (backend + dashboard), `agentronics-t/landing-page`. CI on every PR; tag-deploy via WIF.
+- **Live verified:** api `/health` 200, worker 403-anon, ML job Ready, watchdog cron, queue running, auth flow working (email + Google).
+
+**Remaining before paying customers (not code):** real connector credentials (Cloudflare/Profound/Scrunch) to run the first live import; `GOOGLE_GENAI_SA_KEY` on Vercel for live chat; run the pending cloud verifications in the section below; optionally upgrade Clerk usage limits. See `docs/DEPLOY_CHECKLIST.md` and `docs/RUNBOOK.md`.
+
 **Note:** Neon endpoint is us-east-1 (GCP stack is asia-south1). Acceptable for now; if query latency from Cloud Run matters later, create a Neon project in ap-southeast-1/asia and re-point `neon-database-url`.
 
 ## PENDING CLOUD VERIFICATIONS (run when unblocked — check at every session start)

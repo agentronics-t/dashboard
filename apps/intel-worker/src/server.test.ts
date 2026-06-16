@@ -309,3 +309,39 @@ test("empty pull succeeds with no parquet written", async () => {
   assert.equal(job.status, "succeeded");
   assert.deepEqual(job.gcsPaths, { raw: [] });
 });
+
+// STEP 11 load sanity — concurrency must not corrupt state.
+test("load: 50 concurrent distinct imports all succeed, each in its own raw path", async () => {
+  pullBehavior = async () => [{ agent: "GPTBot", requests: 1 }];
+  const before = ml.triggered.length;
+  const ids = await Promise.all(Array.from({ length: 50 }, () => createJob()));
+
+  const results = await Promise.all(
+    ids.map((id) => app.inject({ method: "POST", url: "/tasks/import", payload: { job_id: id } }))
+  );
+  assert.equal(results.every((r) => r.statusCode === 200), true);
+
+  // every job succeeded and wrote a raw file keyed by its OWN job_id (no mixups)
+  for (const id of ids) {
+    const job = await getJob(id);
+    assert.equal(job.status, "succeeded");
+    const raw = (job.gcsPaths as { raw: string[] }).raw[0]!;
+    assert.match(raw, new RegExp(`job=${id}/`));
+  }
+  // one ML trigger per job — no job lost or double-counted
+  assert.equal(ml.triggered.length - before, 50);
+});
+
+test("idempotency under concurrency: 10 simultaneous deliveries of ONE job → one raw key, one success", async () => {
+  pullBehavior = async () => [{ agent: "ClaudeBot", requests: 2 }];
+  const jobId = await createJob();
+
+  const results = await Promise.all(
+    Array.from({ length: 10 }, () => app.inject({ method: "POST", url: "/tasks/import", payload: { job_id: jobId } }))
+  );
+  // all acked (200); none corrupts — raw path is job-scoped so re-writes overwrite the same key
+  assert.equal(results.every((r) => r.statusCode === 200), true);
+  const job = await getJob(jobId);
+  assert.equal(job.status, "succeeded");
+  assert.equal((job.gcsPaths as { raw: string[] }).raw.length, 1);
+});

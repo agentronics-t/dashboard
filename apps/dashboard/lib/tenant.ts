@@ -1,5 +1,4 @@
 import { createDb, schema } from "@agentronics/intel-schema/db";
-import { eq } from "drizzle-orm";
 
 /** Fixed demo tenant from the seed (used when Clerk is not configured). */
 const DEMO_TENANT_ID = "00000000-0000-4000-8000-000000000001";
