@@ -9,6 +9,21 @@ jobs:
   node:
     name: Node — lint · typecheck · test · build
     runs-on: ubuntu-latest
+    # pgvector image so the schema migration's CREATE EXTENSION vector succeeds.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: intel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      # tests read DATABASE_URL from the env; node strip-types needs Node 22+.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/intel
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -16,24 +31,15 @@ jobs:
           version: 10.33.2
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo build lint
-      # intel-schema + worker tests need a Postgres; provide a throwaway one.
-      - name: Start Postgres
+      - name: Migrate schema
         run: |
-          docker run -d --name pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 \
-            -e POSTGRES_DB=intel postgres:16
-          for i in $(seq 1 30); do docker exec pg pg_isready -U postgres && break; sleep 1; done
-          docker exec pg psql -U postgres -d intel -c 'CREATE EXTENSION IF NOT EXISTS vector;' || \
-            echo "pgvector not in base image — schema migrate will add it"
-      - name: Migrate + test
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/intel
-        run: |
-          pnpm --filter @agentronics/intel-schema db:migrate || true
-          pnpm turbo test
+          echo "DATABASE_URL=${DATABASE_URL}" > packages/intel-schema/.env
+          pnpm --filter @agentronics/intel-schema db:migrate
+      - run: pnpm turbo test
 
   ml:
     name: Python ML — ruff · pytest
