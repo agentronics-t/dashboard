@@ -1,3 +1,4 @@
+import { AccountActions } from "@/components/AccountActions";
 import { Card, CardTitle, fmt, Kpi, PageHeader } from "@/components/ui";
 import { getConnectors, getUsage } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
@@ -39,11 +40,19 @@ export default async function AccountPage() {
       </Card>
 
       <CardTitle>Plan &amp; usage</CardTitle>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 4, marginBottom: 18 }}>
         <Kpi label="Plan" value="Free trial" sub="upgrade in billing" />
         <Kpi label="Governed calls" value={fmt(usage.governedCalls)} sub={`period ${usage.period}`} />
         <Kpi label="Connected plugins" value={String(connected)} sub={`${connectors.length} configured`} />
       </div>
+
+      <Card>
+        <CardTitle>Session</CardTitle>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <span style={{ fontSize: 14, color: "var(--content-secondary)" }}>Sign out of this device.</span>
+          <AccountActions />
+        </div>
+      </Card>
     </>
   );
 }

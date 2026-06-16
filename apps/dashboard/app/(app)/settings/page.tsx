@@ -1,5 +1,4 @@
 import { Card, CardTitle, PageHeader } from "@/components/ui";
-import { ThemeSetting } from "@/components/ThemeSetting";
 
 export const dynamic = "force-dynamic";
 
@@ -7,11 +6,6 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" subtitle="Workspace preferences" />
-
-      <Card style={{ marginBottom: 18 }}>
-        <CardTitle>Appearance</CardTitle>
-        <ThemeSetting />
-      </Card>
 
       <Card style={{ marginBottom: 18 }}>
         <CardTitle>Data sources</CardTitle>

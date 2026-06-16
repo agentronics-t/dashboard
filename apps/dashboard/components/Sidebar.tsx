@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { UserButton } from "@clerk/nextjs";
 import { Logomark } from "./Logomark";
 
 const NAV = [
@@ -57,8 +56,6 @@ function Icon({ name, style }: { name: string; style?: React.CSSProperties }) {
     </svg>
   );
 }
-
-const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -147,12 +144,6 @@ export function Sidebar() {
           <Icon name={dark ? "sun" : "moon"} />
           <span style={labelStyle}>{dark ? "Light mode" : "Dark mode"}</span>
         </button>
-        {hasClerk && (
-          <div className="ag-nav-btn" style={{ justifyContent: open ? "flex-start" : "center", cursor: "default" }}>
-            <UserButton afterSignOutUrl="/sign-in" />
-            <span style={labelStyle}>Account menu</span>
-          </div>
-        )}
       </div>
     </aside>
   );
