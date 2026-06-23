@@ -5,6 +5,25 @@
 // db/schema.ts.
 
 import { z } from "zod";
+import { createHash, randomBytes } from "node:crypto";
+
+// Per-tenant SDK ingest keys. Format: agtx_ik_<base64url>. Only the SHA-256
+// hash is persisted; the raw key is shown once at creation. Shared here so both
+// intel-api (auth) and the dashboard (key minting server action) use one impl.
+export const SDK_INGEST_KEY_PREFIX = "agtx_ik_";
+
+export function generateIngestKey(): { raw: string; hash: string; prefix: string } {
+  const raw = SDK_INGEST_KEY_PREFIX + randomBytes(24).toString("base64url");
+  return { raw, hash: hashIngestKey(raw), prefix: raw.slice(0, 16) };
+}
+
+export function hashIngestKey(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
+
+export function isIngestKey(token: string): boolean {
+  return token.startsWith(SDK_INGEST_KEY_PREFIX);
+}
 
 export const TRACE_EVENT_TYPES = [
   "agent.detected",

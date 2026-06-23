@@ -2,24 +2,16 @@
 // issuer check. Tests inject a local JWKS resolver instead of the remote set.
 
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
-import { createHash, randomBytes } from "node:crypto";
 
-/** Per-tenant SDK ingest keys. Format: agtx_ik_<base64url>. Only the SHA-256
- * hash is persisted; the raw key is shown once at creation. */
-export const SDK_INGEST_KEY_PREFIX = "agtx_ik_";
-
-export function generateIngestKey(): { raw: string; hash: string; prefix: string } {
-  const raw = SDK_INGEST_KEY_PREFIX + randomBytes(24).toString("base64url");
-  return { raw, hash: hashIngestKey(raw), prefix: raw.slice(0, 16) };
-}
-
-export function hashIngestKey(raw: string): string {
-  return createHash("sha256").update(raw).digest("hex");
-}
-
-export function isIngestKey(token: string): boolean {
-  return token.startsWith(SDK_INGEST_KEY_PREFIX);
-}
+// SDK ingest-key helpers live in the shared schema package (used by both this
+// API and the dashboard's key-minting server action). Re-exported for callers
+// that already import from "./auth.ts".
+export {
+  SDK_INGEST_KEY_PREFIX,
+  generateIngestKey,
+  hashIngestKey,
+  isIngestKey
+} from "@agentronics/intel-schema";
 
 export interface AuthContext {
   userId: string;

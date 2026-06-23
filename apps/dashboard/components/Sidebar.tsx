@@ -13,16 +13,16 @@ const NAV = [
   { href: "/chat", label: "Agent Chat", icon: "chat" }
 ];
 
-// SDK section — present in the design, intentionally NOT linked yet. Wired up
-// once the SDK backend is ready; shown disabled with a "soon" marker.
+// SDK section — fed by events streamed to the intel-api SDK ingest endpoint.
+// Each page shows an empty state until the customer connects an ingest key.
 const SDK_NAV = [
-  { label: "Detect", icon: "radar" },
-  { label: "Auth", icon: "key" },
-  { label: "Authz", icon: "shield" },
-  { label: "WebMCP Tools", icon: "plug" },
-  { label: "Knaph", icon: "brain" },
-  { label: "Logs", icon: "list" },
-  { label: "Analytics", icon: "chart" }
+  { href: "/detect", label: "Detect", icon: "radar" },
+  { href: "/auth", label: "Auth", icon: "key" },
+  { href: "/authz", label: "Authz", icon: "shield" },
+  { href: "/webmcp-tools", label: "WebMCP Tools", icon: "plug" },
+  { href: "/knaph", label: "Knaph", icon: "brain" },
+  { href: "/logs", label: "Logs", icon: "list" },
+  { href: "/analytics", label: "Analytics", icon: "chart" }
 ];
 
 const BOTTOM = [
@@ -122,18 +122,7 @@ export function Sidebar() {
         {NAV.map((n) => <NavBtn key={n.href} {...n} />)}
 
         {open && <div style={{ ...sectionLabel, marginTop: 16 }}>SDK</div>}
-        {SDK_NAV.map((n) => (
-          <div
-            key={n.label}
-            className="ag-nav-btn"
-            title={`${n.label} — available when the SDK backend is connected`}
-            style={{ justifyContent: open ? "flex-start" : "center", cursor: "not-allowed", opacity: 0.45 }}
-          >
-            <Icon name={n.icon} />
-            {open && <span style={labelStyle}>{n.label}</span>}
-            {open && <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--content-muted)", border: "1px solid var(--border)", borderRadius: "var(--radius-pill)", padding: "1px 6px" }}>soon</span>}
-          </div>
-        ))}
+        {SDK_NAV.map((n) => <NavBtn key={n.href} {...n} />)}
       </nav>
 
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>

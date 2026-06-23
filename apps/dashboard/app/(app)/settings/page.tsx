@@ -1,11 +1,22 @@
 import { Card, CardTitle, PageHeader } from "@/components/ui";
+import { SdkKeys } from "@/components/SdkKeys";
+import { getSdkIngestKeys } from "@/lib/queries";
+import { getTenantId } from "@/lib/tenant";
+import { mintIngestKey, revokeIngestKey } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const tenantId = await getTenantId();
+  const keys = await getSdkIngestKeys(tenantId);
+
   return (
     <>
       <PageHeader title="Settings" subtitle="Workspace preferences" />
+
+      <div style={{ marginBottom: 18 }}>
+        <SdkKeys keys={keys} mint={mintIngestKey} revoke={revokeIngestKey} />
+      </div>
 
       <Card style={{ marginBottom: 18 }}>
         <CardTitle>Data sources</CardTitle>
