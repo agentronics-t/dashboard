@@ -3,6 +3,16 @@
 
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 
+// SDK ingest-key helpers live in the shared schema package (used by both this
+// API and the dashboard's key-minting server action). Re-exported for callers
+// that already import from "./auth.ts".
+export {
+  SDK_INGEST_KEY_PREFIX,
+  generateIngestKey,
+  hashIngestKey,
+  isIngestKey
+} from "@agentronics/intel-schema";
+
 export interface AuthContext {
   userId: string;
   /** Tenant key: Clerk org id when present, else per-user tenant. */

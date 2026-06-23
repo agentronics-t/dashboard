@@ -1,8 +1,11 @@
 // Server-side typed reads from Neon (the serving mirror). All scoped by tenant.
 import "server-only";
 import { schema } from "@agentronics/intel-schema/db";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "./tenant";
+
+const sinceDate = (days: number) =>
+  new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
 
 export interface TrafficDay {
   date: string;
@@ -152,6 +155,160 @@ export async function getConnectors(tenantId: string) {
     })
     .from(schema.connectors)
     .where(eq(schema.connectors.tenantId, tenantId));
+}
+
+// ---- SDK event stream (pushed via POST /v1/sdk/events) --------------------
+
+export interface SdkDailyRow {
+  date: string;
+  type: string;
+  agentClass: string;
+  outcome: string;
+  count: number;
+}
+
+/** Per-pillar daily rollup for the last `days`. Pages aggregate as needed. */
+export async function getSdkEventDaily(tenantId: string, days = 30): Promise<SdkDailyRow[]> {
+  const rows = await db()
+    .select({
+      date: schema.sdkEventDaily.date,
+      type: schema.sdkEventDaily.type,
+      agentClass: schema.sdkEventDaily.agentClass,
+      outcome: schema.sdkEventDaily.outcome,
+      count: sql<number>`sum(${schema.sdkEventDaily.count})::int`
+    })
+    .from(schema.sdkEventDaily)
+    .where(
+      and(
+        eq(schema.sdkEventDaily.tenantId, tenantId),
+        gte(schema.sdkEventDaily.date, sinceDate(days))
+      )
+    )
+    .groupBy(
+      schema.sdkEventDaily.date,
+      schema.sdkEventDaily.type,
+      schema.sdkEventDaily.agentClass,
+      schema.sdkEventDaily.outcome
+    );
+  return rows.map((r) => ({ ...r, count: Number(r.count) }));
+}
+
+/** Totals per event type over the window (KPIs / Analytics). */
+export async function getSdkEventTotals(tenantId: string, days = 30): Promise<Record<string, number>> {
+  const rows = await db()
+    .select({
+      type: schema.sdkEventDaily.type,
+      count: sql<number>`sum(${schema.sdkEventDaily.count})::int`
+    })
+    .from(schema.sdkEventDaily)
+    .where(
+      and(
+        eq(schema.sdkEventDaily.tenantId, tenantId),
+        gte(schema.sdkEventDaily.date, sinceDate(days))
+      )
+    )
+    .groupBy(schema.sdkEventDaily.type);
+  return Object.fromEntries(rows.map((r) => [r.type, Number(r.count)]));
+}
+
+export interface SdkEventRow {
+  id: string;
+  siteId: string;
+  sessionId: string;
+  occurredAt: Date;
+  type: string;
+  tool: string | null;
+  agentClass: string | null;
+  agentVendor: string | null;
+  trust: string | null;
+  outcome: string;
+  durationMs: number | null;
+  page: string | null;
+  protocol: string | null;
+  error: string | null;
+}
+
+/** Recent raw events (Logs feed + per-pillar drill-down), optionally by type. */
+export async function getSdkRecentEvents(
+  tenantId: string,
+  opts: { types?: string[]; limit?: number } = {}
+): Promise<SdkEventRow[]> {
+  const { types, limit = 100 } = opts;
+  const where = types?.length
+    ? and(
+        eq(schema.sdkEvents.tenantId, tenantId),
+        inArray(schema.sdkEvents.type, types as (typeof schema.sdkEvents.$inferSelect.type)[])
+      )
+    : eq(schema.sdkEvents.tenantId, tenantId);
+  return db()
+    .select({
+      id: schema.sdkEvents.id,
+      siteId: schema.sdkEvents.siteId,
+      sessionId: schema.sdkEvents.sessionId,
+      occurredAt: schema.sdkEvents.occurredAt,
+      type: schema.sdkEvents.type,
+      tool: schema.sdkEvents.tool,
+      agentClass: schema.sdkEvents.agentClass,
+      agentVendor: schema.sdkEvents.agentVendor,
+      trust: schema.sdkEvents.trust,
+      outcome: schema.sdkEvents.outcome,
+      durationMs: schema.sdkEvents.durationMs,
+      page: schema.sdkEvents.page,
+      protocol: schema.sdkEvents.protocol,
+      error: schema.sdkEvents.error
+    })
+    .from(schema.sdkEvents)
+    .where(where)
+    .orderBy(desc(schema.sdkEvents.occurredAt))
+    .limit(limit);
+}
+
+/** Latest synced tool registry (WebMCP Tools page). */
+export async function getSdkToolRegistry(tenantId: string) {
+  return db()
+    .select({
+      siteId: schema.sdkToolRegistry.siteId,
+      toolName: schema.sdkToolRegistry.toolName,
+      groupName: schema.sdkToolRegistry.groupName,
+      page: schema.sdkToolRegistry.page,
+      inputSchema: schema.sdkToolRegistry.inputSchema,
+      outputSchema: schema.sdkToolRegistry.outputSchema,
+      tokens: schema.sdkToolRegistry.tokens,
+      updatedAt: schema.sdkToolRegistry.updatedAt
+    })
+    .from(schema.sdkToolRegistry)
+    .where(eq(schema.sdkToolRegistry.tenantId, tenantId))
+    .orderBy(schema.sdkToolRegistry.page, schema.sdkToolRegistry.toolName);
+}
+
+/** Latest site-memory snapshots + scores (Knaph page). */
+export async function getSdkSiteMemory(tenantId: string) {
+  return db()
+    .select({
+      siteId: schema.sdkSiteMemory.siteId,
+      snapshot: schema.sdkSiteMemory.snapshot,
+      score: schema.sdkSiteMemory.score,
+      updatedAt: schema.sdkSiteMemory.updatedAt
+    })
+    .from(schema.sdkSiteMemory)
+    .where(eq(schema.sdkSiteMemory.tenantId, tenantId))
+    .orderBy(desc(schema.sdkSiteMemory.updatedAt));
+}
+
+/** SDK ingest keys for the Settings page (never returns the raw key). */
+export async function getSdkIngestKeys(tenantId: string) {
+  return db()
+    .select({
+      id: schema.sdkIngestKeys.id,
+      prefix: schema.sdkIngestKeys.prefix,
+      label: schema.sdkIngestKeys.label,
+      createdAt: schema.sdkIngestKeys.createdAt,
+      lastUsedAt: schema.sdkIngestKeys.lastUsedAt,
+      revokedAt: schema.sdkIngestKeys.revokedAt
+    })
+    .from(schema.sdkIngestKeys)
+    .where(eq(schema.sdkIngestKeys.tenantId, tenantId))
+    .orderBy(desc(schema.sdkIngestKeys.createdAt));
 }
 
 export async function getUsage(tenantId: string) {
