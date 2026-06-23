@@ -8,6 +8,13 @@
       "when": 1781223661656,
       "tag": "0000_furry_wolfsbane",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782195925136,
+      "tag": "0001_giant_zarda",
+      "breakpoints": true
     }
   ]
 }
