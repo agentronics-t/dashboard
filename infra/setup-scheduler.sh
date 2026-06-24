@@ -38,10 +38,12 @@ gcloud run services add-iam-policy-binding intel-worker \
 
 upsert_job() {
   local name="$1" schedule="$2" uri="$3" body="$4" audience="$5"
-  local action=create
+  # `create` takes --headers; `update` takes --update-headers (gcloud quirk).
+  local action=create header_flag=--headers
   if gcloud scheduler jobs describe "${name}" --location "${REGION}" \
        --project "${PROJECT_ID}" >/dev/null 2>&1; then
     action=update
+    header_flag=--update-headers
   fi
   gcloud scheduler jobs "${action}" http "${name}" \
     --location "${REGION}" \
@@ -50,7 +52,7 @@ upsert_job() {
     --time-zone "${TZ}" \
     --uri "${uri}" \
     --http-method POST \
-    --headers "Content-Type=application/json" \
+    "${header_flag}" "Content-Type=application/json" \
     --message-body "${body}" \
     --oidc-service-account-email "${SA}" \
     --oidc-token-audience "${audience}" \
