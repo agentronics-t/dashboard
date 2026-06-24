@@ -355,3 +355,54 @@ export const sdkSiteMemory = pgTable(
   },
   (t) => [uniqueIndex("sdk_site_memory_uq").on(t.tenantId, t.siteId)]
 );
+
+// ML over the SDK stream (intel-ml `--sdk` pass). Deliberately separate from the
+// web-traffic `forecasts`/`insights` tables so the SDK pages own this data and
+// the traffic Forecast/Insights/Chat (+ its pgvector RAG) are never affected.
+
+// 14-day forecasts of SDK volume. metric ∈ {sdk_events, sdk_detections,
+// sdk_tool_calls, sdk_blocked}.
+export const sdkForecasts = pgTable(
+  "sdk_forecasts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    metric: text("metric").notNull(),
+    horizonDate: date("horizon_date").notNull(),
+    p10: doublePrecision("p10").notNull(),
+    p50: doublePrecision("p50").notNull(),
+    p90: doublePrecision("p90").notNull(),
+    modelVersion: text("model_version").notNull(),
+    jobId: uuid("job_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [uniqueIndex("sdk_forecasts_uq").on(t.tenantId, t.metric, t.horizonDate)]
+);
+
+// AI insights over the SDK stream. No `embedding` — these are not in the Agent
+// Chat RAG (kept separate). Latest row per (tenant, kind).
+export const sdkInsights = pgTable(
+  "sdk_insights",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id"),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    bodyMd: text("body_md").notNull(),
+    severity: insightSeverity("severity").notNull().default("info"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    uniqueIndex("sdk_insights_uq").on(t.tenantId, t.kind),
+    index("sdk_insights_tenant_created_idx").on(t.tenantId, t.createdAt)
+  ]
+);

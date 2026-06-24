@@ -43,6 +43,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="intel-ml")
     parser.add_argument("--job-id", help="Import job id (jobs.id in Neon)")
     parser.add_argument(
+        "--sdk",
+        action="store_true",
+        help="Run the SDK ML pass (forecasts + insights over sdk_event_daily) "
+        "instead of the import pipeline. Reads Neon directly (no GCS).",
+    )
+    parser.add_argument(
+        "--tenant",
+        help="With --sdk: limit to one tenant id (default = all tenants with SDK events)",
+    )
+    parser.add_argument(
         "--healthcheck",
         action="store_true",
         help="Verify the module imports and exits 0 (used by docker build verify)",
@@ -55,10 +65,23 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("healthcheck ok service=intel-ml")
         return 0
 
-    if not args.job_id:
-        parser.error("--job-id is required unless --healthcheck")
-
     database_url = os.environ.get("DATABASE_URL")
+
+    # SDK pass — Neon only, no GCS/import job.
+    if args.sdk:
+        if not database_url:
+            logger.error("DATABASE_URL is required")
+            return 1
+        from intel_ml.db import PostgresDatabase
+        from intel_ml.insights.llm import llm_from_env
+        from intel_ml.sdk_pipeline import run_sdk
+
+        logger.info("intel-ml SDK pass started tenant=%s", args.tenant or "<all>")
+        return run_sdk(PostgresDatabase(database_url), llm_from_env(), args.tenant)
+
+    if not args.job_id:
+        parser.error("--job-id is required unless --sdk or --healthcheck")
+
     bucket = os.environ.get("GCS_BUCKET")
     if not database_url or not bucket:
         logger.error("DATABASE_URL and GCS_BUCKET are required")

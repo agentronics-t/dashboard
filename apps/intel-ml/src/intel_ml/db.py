@@ -44,6 +44,40 @@ class Database(ABC):
     def upsert_insights(self, rows: list[Any]) -> None:
         """rows: intel_ml.insights.InsightRow — UPSERT on (job_id, kind)."""
 
+    # --- SDK ML pass (--sdk) — reads sdk_event_daily/sdk_events, writes the
+    #     dedicated sdk_forecasts/sdk_insights tables (kept separate). Concrete
+    #     (not abstract) so import-only Database stubs don't have to implement
+    #     them; PostgresDatabase overrides all of these. ---
+    def list_sdk_tenants(self) -> list[str]:
+        """Tenants that have any SDK events (have sdk_event_daily rows)."""
+        raise NotImplementedError
+
+    def read_sdk_event_daily(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Rows: {date, type, agent_class, outcome, count}."""
+        raise NotImplementedError
+
+    def read_sdk_top_vendors(
+        self, tenant_id: str, since: str, limit: int = 8
+    ) -> list[dict[str, Any]]:
+        """Top detected agent vendors since `since` (YYYY-MM-DD): {vendor, count}."""
+        raise NotImplementedError
+
+    def read_sdk_top_blocked_tools(
+        self, tenant_id: str, since: str, limit: int = 8
+    ) -> list[dict[str, Any]]:
+        """Tools with the most blocked outcomes since `since`: {tool, count}."""
+        raise NotImplementedError
+
+    def upsert_sdk_forecasts(
+        self, tenant_id: str, metric: str, rows: list[dict[str, Any]],
+        model_version: str, job_id: str,
+    ) -> None:
+        raise NotImplementedError
+
+    def upsert_sdk_insights(self, rows: list[Any]) -> None:
+        """rows: intel_ml.insights.InsightRow — UPSERT on (tenant_id, kind)."""
+        raise NotImplementedError
+
 
 class PostgresDatabase(Database):
     def __init__(self, database_url: str) -> None:
@@ -137,6 +171,81 @@ class PostgresDatabase(Database):
                         r.tenant_id, r.job_id, r.kind, r.title, r.body_md, r.severity,
                         str(r.embedding) if r.embedding is not None else None,
                     )
+                    for r in rows
+                ],
+            )
+
+    # --- SDK ML pass ---------------------------------------------------------
+
+    def list_sdk_tenants(self) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT DISTINCT tenant_id FROM sdk_event_daily"
+        ).fetchall()
+        return [str(r[0]) for r in rows]
+
+    def read_sdk_event_daily(self, tenant_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT date, type, agent_class, outcome, count
+               FROM sdk_event_daily WHERE tenant_id = %s ORDER BY date""",
+            (tenant_id,),
+        ).fetchall()
+        return [
+            {"date": str(r[0]), "type": r[1], "agent_class": r[2],
+             "outcome": r[3], "count": int(r[4])}
+            for r in rows
+        ]
+
+    def read_sdk_top_vendors(self, tenant_id, since, limit=8) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT agent_vendor, count(*) FROM sdk_events
+               WHERE tenant_id = %s AND type = 'agent.detected'
+                 AND agent_vendor IS NOT NULL AND occurred_at >= %s
+               GROUP BY agent_vendor ORDER BY 2 DESC LIMIT %s""",
+            (tenant_id, since, limit),
+        ).fetchall()
+        return [{"vendor": r[0], "count": int(r[1])} for r in rows]
+
+    def read_sdk_top_blocked_tools(self, tenant_id, since, limit=8) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT tool, count(*) FROM sdk_events
+               WHERE tenant_id = %s AND outcome = 'blocked'
+                 AND tool IS NOT NULL AND occurred_at >= %s
+               GROUP BY tool ORDER BY 2 DESC LIMIT %s""",
+            (tenant_id, since, limit),
+        ).fetchall()
+        return [{"tool": r[0], "count": int(r[1])} for r in rows]
+
+    def upsert_sdk_forecasts(self, tenant_id, metric, rows, model_version, job_id) -> None:
+        with self._conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO sdk_forecasts
+                     (tenant_id, metric, horizon_date, p10, p50, p90, model_version, job_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (tenant_id, metric, horizon_date) DO UPDATE SET
+                     p10 = EXCLUDED.p10, p50 = EXCLUDED.p50, p90 = EXCLUDED.p90,
+                     model_version = EXCLUDED.model_version, job_id = EXCLUDED.job_id""",
+                [
+                    (
+                        tenant_id, metric, r["date"],
+                        float(r["p10"]), float(r["p50"]), float(r["p90"]),
+                        model_version, job_id,
+                    )
+                    for r in rows
+                ],
+            )
+
+    def upsert_sdk_insights(self, rows: list[Any]) -> None:
+        with self._conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO sdk_insights
+                     (tenant_id, job_id, kind, title, body_md, severity)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (tenant_id, kind) DO UPDATE SET
+                     job_id = EXCLUDED.job_id, title = EXCLUDED.title,
+                     body_md = EXCLUDED.body_md, severity = EXCLUDED.severity,
+                     created_at = now()""",
+                [
+                    (r.tenant_id, r.job_id, r.kind, r.title, r.body_md, r.severity)
                     for r in rows
                 ],
             )
