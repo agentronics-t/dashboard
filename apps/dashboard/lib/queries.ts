@@ -311,6 +311,40 @@ export async function getSdkIngestKeys(tenantId: string) {
     .orderBy(desc(schema.sdkIngestKeys.createdAt));
 }
 
+/** SDK volume forecasts (sdk_forecasts) — separate from web-traffic forecasts. */
+export async function getSdkForecasts(tenantId: string): Promise<ForecastPoint[]> {
+  const rows = await db()
+    .select({
+      metric: schema.sdkForecasts.metric,
+      horizon_date: schema.sdkForecasts.horizonDate,
+      p10: schema.sdkForecasts.p10,
+      p50: schema.sdkForecasts.p50,
+      p90: schema.sdkForecasts.p90,
+      model_version: schema.sdkForecasts.modelVersion
+    })
+    .from(schema.sdkForecasts)
+    .where(eq(schema.sdkForecasts.tenantId, tenantId))
+    .orderBy(schema.sdkForecasts.metric, schema.sdkForecasts.horizonDate);
+  return rows.map((r) => ({ ...r, p10: Number(r.p10), p50: Number(r.p50), p90: Number(r.p90) }));
+}
+
+/** SDK AI insights (sdk_insights) — separate from the web-traffic Insights feed. */
+export async function getSdkInsights(tenantId: string, limit = 20) {
+  return db()
+    .select({
+      id: schema.sdkInsights.id,
+      kind: schema.sdkInsights.kind,
+      title: schema.sdkInsights.title,
+      body_md: schema.sdkInsights.bodyMd,
+      severity: schema.sdkInsights.severity,
+      created_at: schema.sdkInsights.createdAt
+    })
+    .from(schema.sdkInsights)
+    .where(eq(schema.sdkInsights.tenantId, tenantId))
+    .orderBy(desc(schema.sdkInsights.createdAt))
+    .limit(limit);
+}
+
 export async function getUsage(tenantId: string) {
   const period = new Date().toISOString().slice(0, 7);
   const [row] = await db()

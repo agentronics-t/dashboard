@@ -12,6 +12,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from collections.abc import Callable, Sequence
+
 from intel_ml.insights.agents import REGISTRY, InsightAgent
 from intel_ml.insights.llm import LlmClient
 from intel_ml.insights.schema import InsightOutput, parse_insight
@@ -53,10 +55,20 @@ def run_stage(
     stats: dict[str, Any],
     db: Any = None,
     llm: LlmClient | None = None,
+    registry: Sequence[InsightAgent] = REGISTRY,
+    upsert: Callable[[list[InsightRow]], None] | None = None,
+    embed: bool = True,
 ) -> list[InsightRow]:
+    """Generate + persist insights for one agent registry.
+
+    Defaults run the web-traffic registry → `db.upsert_insights` (with pgvector
+    embeddings). The SDK pass passes its own `registry` + `upsert`
+    (`db.upsert_sdk_insights`) and `embed=False` (SDK insights are not in the
+    Agent Chat RAG — kept separate).
+    """
     rows: list[InsightRow] = []
 
-    for agent in REGISTRY:
+    for agent in registry:
         context = agent.build_context(stats)
         if context is None:
             logger.info("insight %s skipped — insufficient data", agent.kind)
@@ -70,7 +82,9 @@ def run_stage(
         footer = f"\n\n---\n_{agent.kind}@{agent.template.version}" + (
             "·fallback_" if fallback else "_"
         )
-        embedding = llm.embed(f"{output.title}\n{output.body_md}") if llm else None
+        embedding = (
+            llm.embed(f"{output.title}\n{output.body_md}") if (llm and embed) else None
+        )
 
         rows.append(
             InsightRow(
@@ -91,6 +105,6 @@ def run_stage(
         )
 
     if db is not None and rows:
-        db.upsert_insights(rows)
+        (upsert or db.upsert_insights)(rows)
         logger.info("upserted %d insights", len(rows))
     return rows
