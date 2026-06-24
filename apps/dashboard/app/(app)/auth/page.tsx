@@ -2,6 +2,7 @@ import { Card, CardTitle, Kpi, PageHeader, fmt } from "@/components/ui";
 import { BarList, EventFeed, SdkEmpty } from "@/components/sdk";
 import { getSdkRecentEvents } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function AuthPage() {
 
   return (
     <>
-      <PageHeader title="Auth" subtitle="Identities agents presented, by protocol and trust" />
+      <PageHeader title="Auth" subtitle="Identities agents presented, by protocol and trust" action={<LiveRefresh />} />
       {events.length === 0 ? (
         <SdkEmpty feature="auth" />
       ) : (

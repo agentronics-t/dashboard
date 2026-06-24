@@ -5,6 +5,7 @@
 #   - SA intel-scheduler (OIDC identity for scheduled calls)
 #   - per-connector daily import cron  → POST {API_URL}/v1/imports  (02:00 IST)
 #   - hourly watchdog cron             → POST {WORKER_URL}/tasks/watchdog
+#   - daily retention prune cron       → POST {WORKER_URL}/tasks/prune
 #
 # Usage:
 #   ./infra/setup-scheduler.sh <PROJECT_ID>                       # watchdog only
@@ -58,6 +59,9 @@ upsert_job() {
 
 echo "▶ Watchdog cron (hourly)"
 upsert_job intel-watchdog "0 * * * *" "${WORKER_URL}/tasks/watchdog" '{}' "${WORKER_URL}"
+
+echo "▶ Retention prune cron (daily 04:00 IST) — prunes sdk_events past RETENTION_DAYS"
+upsert_job intel-prune "0 4 * * *" "${WORKER_URL}/tasks/prune" '{}' "${WORKER_URL}"
 
 if [[ -n "${CONNECTOR_ID}" ]]; then
   SHORT="${CONNECTOR_ID:0:8}"

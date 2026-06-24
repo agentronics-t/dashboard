@@ -2,6 +2,7 @@ import { Badge, Card, CardTitle, PageHeader, fmt } from "@/components/ui";
 import { ContextBar, SdkEmpty } from "@/components/sdk";
 import { getSdkToolRegistry } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export default async function WebmcpToolsPage() {
 
   return (
     <>
-      <PageHeader title="WebMCP Tools" subtitle="Synced tool registry, page-wise, with token cost" />
+      <PageHeader title="WebMCP Tools" subtitle="Synced tool registry, page-wise, with token cost" action={<LiveRefresh />} />
       {tools.length === 0 ? (
         <SdkEmpty feature="tool" />
       ) : (
