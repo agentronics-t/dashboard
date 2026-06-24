@@ -7,7 +7,9 @@ const envSchema = z.object({
   GCP_PROJECT: z.string().min(1),
   GCP_REGION: z.string().default("asia-south1"),
   GCS_BUCKET: z.string().min(1),
-  ML_JOB_NAME: z.string().default("intel-ml")
+  ML_JOB_NAME: z.string().default("intel-ml"),
+  // Raw sdk_events older than this are pruned by /tasks/prune (rollups kept).
+  RETENTION_DAYS: z.coerce.number().int().positive().default(90)
 });
 
 export type Env = z.infer<typeof envSchema>;

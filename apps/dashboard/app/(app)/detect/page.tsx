@@ -2,6 +2,7 @@ import { Card, CardTitle, Kpi, PageHeader, fmt } from "@/components/ui";
 import { BarList, EventFeed, SdkEmpty } from "@/components/sdk";
 import { getSdkEventDaily, getSdkRecentEvents } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function DetectPage() {
 
   return (
     <>
-      <PageHeader title="Detect" subtitle="Which agents the SDK identified on your pages" />
+      <PageHeader title="Detect" subtitle="Which agents the SDK identified on your pages" action={<LiveRefresh />} />
       {!hasData ? (
         <SdkEmpty feature="detection" />
       ) : (

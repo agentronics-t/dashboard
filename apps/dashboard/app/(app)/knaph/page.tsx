@@ -2,6 +2,7 @@ import { Card, CardTitle, PageHeader } from "@/components/ui";
 import { EventFeed, SdkEmpty } from "@/components/sdk";
 import { getSdkRecentEvents, getSdkSiteMemory } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export default async function KnaphPage() {
       <PageHeader
         title="Knaph"
         subtitle="Site memory — the structured context your sites serve to agents"
+        action={<LiveRefresh />}
       />
       {memory.length === 0 && events.length === 0 ? (
         <SdkEmpty feature="site-memory" />

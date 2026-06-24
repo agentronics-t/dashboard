@@ -345,3 +345,32 @@ test("idempotency under concurrency: 10 simultaneous deliveries of ONE job → o
   assert.equal(job.status, "succeeded");
   assert.equal((job.gcsPaths as { raw: string[] }).raw.length, 1);
 });
+
+test("prune: deletes sdk_events past the retention window, keeps recent", async () => {
+  const oldId = `evt_old_${Date.now()}`;
+  const recentId = `evt_recent_${Date.now()}`;
+  const base = {
+    tenantId,
+    siteId: "shop",
+    sessionId: "s",
+    occurredAt: NOW,
+    type: "agent.detected" as const,
+    outcome: "success" as const
+  };
+  await db.insert(schema.sdkEvents).values([
+    { ...base, id: oldId, ingestedAt: new Date("2026-01-01T00:00:00Z") }, // >90d before NOW → pruned
+    { ...base, id: recentId, ingestedAt: new Date("2026-06-11T00:00:00Z") } // within window → kept
+  ]);
+
+  const res = await app.inject({ method: "POST", url: "/tasks/prune" });
+  assert.equal(res.statusCode, 200);
+  assert.ok(res.json().pruned_events >= 1);
+
+  const rows = await db
+    .select({ id: schema.sdkEvents.id })
+    .from(schema.sdkEvents)
+    .where(eq(schema.sdkEvents.tenantId, tenantId));
+  const ids = rows.map((r) => r.id);
+  assert.ok(!ids.includes(oldId), "old event pruned");
+  assert.ok(ids.includes(recentId), "recent event kept");
+});

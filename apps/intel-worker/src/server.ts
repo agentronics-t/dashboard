@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { z } from "zod";
 import { rawPath, type ConnectorSource } from "@agentronics/intel-schema";
 import { schema, type Db } from "@agentronics/intel-schema/db";
@@ -25,6 +25,8 @@ export interface WorkerDeps {
   ml: MlTrigger;
   adapters: AdapterRegistry;
   now?: () => Date;
+  /** Raw sdk_events (and finished jobs) older than this are pruned. Default 90. */
+  retentionDays?: number;
 }
 
 const taskBody = z.object({
@@ -36,6 +38,7 @@ const taskBody = z.object({
 export function buildServer(deps: WorkerDeps) {
   const { db, storage, secrets, ml, adapters } = deps;
   const now = deps.now ?? (() => new Date());
+  const retentionDays = deps.retentionDays ?? 90;
 
   const app = Fastify({
     logger: {
@@ -222,6 +225,38 @@ export function buildServer(deps: WorkerDeps) {
       req.log.warn({ jobs: stuck.map((j) => j.id) }, "watchdog failed stuck jobs");
     }
     return { checked_at: now().toISOString(), failed: stuck.length };
+  });
+
+  // Retention (Cloud Scheduler, daily): prune raw sdk_events past RETENTION_DAYS
+  // (the sdk_event_daily rollups that power charts are kept), and drop finished
+  // job rows past the same window so the jobs table stays bounded. Same private
+  // OIDC path as the watchdog. The rollups/forecasts/insights are unaffected.
+  app.post("/tasks/prune", async (req) => {
+    const cutoff = new Date(now().getTime() - retentionDays * 24 * 60 * 60 * 1000);
+
+    const events = await db
+      .delete(schema.sdkEvents)
+      .where(lt(schema.sdkEvents.ingestedAt, cutoff))
+      .returning({ id: schema.sdkEvents.id });
+
+    const jobs = await db
+      .delete(schema.jobs)
+      .where(
+        and(
+          inArray(schema.jobs.status, ["succeeded", "failed"]),
+          lt(schema.jobs.finishedAt, cutoff)
+        )
+      )
+      .returning({ id: schema.jobs.id });
+
+    const result = {
+      cutoff: cutoff.toISOString(),
+      retention_days: retentionDays,
+      pruned_events: events.length,
+      pruned_jobs: jobs.length
+    };
+    req.log.info(result, "prune complete");
+    return result;
   });
 
   /** Dead-letter visibility: permanent failures surface in the insights feed. */

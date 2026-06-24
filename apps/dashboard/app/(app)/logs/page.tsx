@@ -2,6 +2,7 @@ import { Card, CardTitle, PageHeader } from "@/components/ui";
 import { EventFeed, SdkEmpty } from "@/components/sdk";
 import { getSdkRecentEvents } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export default async function LogsPage() {
 
   return (
     <>
-      <PageHeader title="Logs" subtitle="Live stream of every SDK event, newest first" />
+      <PageHeader title="Logs" subtitle="Live stream of every SDK event, newest first" action={<LiveRefresh />} />
       {events.length === 0 ? (
         <SdkEmpty feature="SDK" />
       ) : (

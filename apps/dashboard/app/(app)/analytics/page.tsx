@@ -3,6 +3,7 @@ import { ForecastBand } from "@/components/charts/ForecastBand";
 import { BarList, SdkEmpty } from "@/components/sdk";
 import { getSdkEventTotals, getSdkForecasts, getSdkInsights } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export default async function AnalyticsPage() {
 
   return (
     <>
-      <PageHeader title="Analytics" subtitle="Cross-pillar SDK activity, forecasts, and AI insights" />
+      <PageHeader title="Analytics" subtitle="Cross-pillar SDK activity, forecasts, and AI insights" action={<LiveRefresh />} />
       {all === 0 ? (
         <SdkEmpty feature="SDK" />
       ) : (
