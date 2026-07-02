@@ -73,8 +73,7 @@ export const sdkTraceEvent = z.object({
   durationMs: z.number().int().nonnegative().optional(),
   outcome: sdkEventOutcome,
   error: z.string().optional(),
-  // Reserved metadata keys the ingest reads: `page`, `protocol`, and (for
-  // memory.updated) `snapshot` + `score`, and (for tool.registered) `tool`.
+  // Reserved metadata keys the ingest reads: `page`, `protocol`.
   metadata: z.record(z.string(), z.unknown()).default({})
 });
 export type SdkTraceEvent = z.infer<typeof sdkTraceEvent>;
@@ -85,3 +84,31 @@ export const sdkTraceBatch = z.object({
   events: z.array(sdkTraceEvent).min(1).max(500)
 });
 export type SdkTraceBatch = z.infer<typeof sdkTraceBatch>;
+
+// Authoritative pushes for the WebMCP Tools + Knaph pages. The full tool
+// descriptors (schema + token cost) and the site-memory snapshot are too large
+// for lightweight trace events, so they get dedicated endpoints
+// (POST /v1/sdk/tools, POST /v1/sdk/memory). Mirrors the SDK's syncTools()
+// registry + provideSiteMemory() snapshot.
+export const sdkToolDescriptor = z.object({
+  name: z.string().min(1),
+  group: z.string().nullable().optional(),
+  page: z.string().nullable().optional(),
+  inputSchema: z.record(z.string(), z.unknown()).optional(),
+  outputSchema: z.record(z.string(), z.unknown()).nullable().optional(),
+  tokens: z.number().int().nonnegative().optional()
+});
+export type SdkToolDescriptor = z.infer<typeof sdkToolDescriptor>;
+
+export const sdkToolsPush = z.object({
+  siteId: z.string().min(1),
+  tools: z.array(sdkToolDescriptor).max(1000)
+});
+export type SdkToolsPush = z.infer<typeof sdkToolsPush>;
+
+export const sdkMemoryPush = z.object({
+  siteId: z.string().min(1),
+  snapshot: z.record(z.string(), z.unknown()),
+  score: z.number().int().min(0).max(100).nullable().optional()
+});
+export type SdkMemoryPush = z.infer<typeof sdkMemoryPush>;

@@ -5,6 +5,8 @@ import { z } from "zod";
 import {
   connectorSource,
   sdkTraceBatch,
+  sdkToolsPush,
+  sdkMemoryPush,
   type SdkEventType,
   type SdkEventOutcome
 } from "@agentronics/intel-schema";
@@ -26,7 +28,7 @@ declare module "fastify" {
     tenantId: string;
     /** true for service-to-service callers (Cloud Scheduler) — imports only */
     internal: boolean;
-    /** true for SDK ingest-key callers — POST /v1/sdk/events only */
+    /** true for SDK ingest-key callers — POST /v1/sdk/{events,tools,memory} only */
     sdkIngest: boolean;
   }
 }
@@ -168,16 +170,15 @@ export function buildServer(deps: ServerDeps) {
     });
 
     // Internal (Scheduler) callers may only trigger imports; SDK ingest-key
-    // callers may only push events. Everything else needs a Clerk session.
+    // callers may only push telemetry (events/tools/memory). Everything else
+    // needs a Clerk session.
+    const SDK_INGEST_PATHS = ["/v1/sdk/events", "/v1/sdk/tools", "/v1/sdk/memory"];
     api.addHook("preHandler", async (req, reply) => {
       if (req.internal && !(req.method === "POST" && req.url === "/v1/imports")) {
         return reply.status(403).send({ error: "internal_caller_imports_only" });
       }
-      if (
-        req.sdkIngest &&
-        !(req.method === "POST" && req.url.startsWith("/v1/sdk/events"))
-      ) {
-        return reply.status(403).send({ error: "ingest_key_events_only" });
+      if (req.sdkIngest && !(req.method === "POST" && SDK_INGEST_PATHS.includes(req.url))) {
+        return reply.status(403).send({ error: "ingest_key_write_only" });
       }
     });
 
@@ -374,47 +375,53 @@ export function buildServer(deps: ServerDeps) {
           });
       }
 
-      // 3) latest tool registry (tool.registered) + site memory (memory.updated)
-      for (const e of batch.events) {
-        const m = e.metadata;
-        if (e.type === "tool.registered" && e.tool) {
-          const tool = {
-            groupName: typeof m.group === "string" ? m.group : null,
-            page: typeof m.page === "string" ? m.page : null,
-            inputSchema: (m.inputSchema as Record<string, unknown>) ?? {},
-            outputSchema: (m.outputSchema as Record<string, unknown> | undefined) ?? null,
-            tokens: typeof m.tokens === "number" ? m.tokens : 0
-          };
-          await db
-            .insert(schema.sdkToolRegistry)
-            .values({ tenantId, siteId: e.siteId, toolName: e.tool, ...tool })
-            .onConflictDoUpdate({
-              target: [
-                schema.sdkToolRegistry.tenantId,
-                schema.sdkToolRegistry.siteId,
-                schema.sdkToolRegistry.toolName
-              ],
-              set: { ...tool, updatedAt: new Date() }
-            });
-        }
-        if (e.type === "memory.updated" && m.snapshot && typeof m.snapshot === "object") {
-          const mem = {
-            snapshot: m.snapshot as Record<string, unknown>,
-            score: typeof m.score === "number" ? m.score : null
-          };
-          await db
-            .insert(schema.sdkSiteMemory)
-            .values({ tenantId, siteId: e.siteId, ...mem })
-            .onConflictDoUpdate({
-              target: [schema.sdkSiteMemory.tenantId, schema.sdkSiteMemory.siteId],
-              set: { ...mem, updatedAt: new Date() }
-            });
-        }
-      }
-
+      // Note: the tool registry + site-memory snapshot are NOT reconstructed
+      // from trace metadata (real SDK traces are lightweight) — they're pushed
+      // authoritatively via POST /v1/sdk/tools and /v1/sdk/memory below.
       return reply
         .status(202)
         .send({ ok: true, accepted, deduped: rows.length - accepted });
+    });
+
+    // ---- SDK tool registry (authoritative; from the SDK's syncTools()) -------
+    api.post("/v1/sdk/tools", async (req, reply) => {
+      const body = sdkToolsPush.parse(req.body);
+      const tenantId = req.tenantId;
+      for (const t of body.tools) {
+        const row = {
+          groupName: t.group ?? null,
+          page: t.page ?? null,
+          inputSchema: t.inputSchema ?? {},
+          outputSchema: t.outputSchema ?? null,
+          tokens: t.tokens ?? 0
+        };
+        await db
+          .insert(schema.sdkToolRegistry)
+          .values({ tenantId, siteId: body.siteId, toolName: t.name, ...row })
+          .onConflictDoUpdate({
+            target: [
+              schema.sdkToolRegistry.tenantId,
+              schema.sdkToolRegistry.siteId,
+              schema.sdkToolRegistry.toolName
+            ],
+            set: { ...row, updatedAt: new Date() }
+          });
+      }
+      return reply.status(202).send({ ok: true, tools: body.tools.length });
+    });
+
+    // ---- SDK site-memory snapshot (authoritative; from provideSiteMemory) ----
+    api.post("/v1/sdk/memory", async (req, reply) => {
+      const body = sdkMemoryPush.parse(req.body);
+      const mem = { snapshot: body.snapshot, score: body.score ?? null };
+      await db
+        .insert(schema.sdkSiteMemory)
+        .values({ tenantId: req.tenantId, siteId: body.siteId, ...mem })
+        .onConflictDoUpdate({
+          target: [schema.sdkSiteMemory.tenantId, schema.sdkSiteMemory.siteId],
+          set: { ...mem, updatedAt: new Date() }
+        });
+      return reply.status(202).send({ ok: true, siteId: body.siteId });
     });
 
     // ---- SDK ingest-key management (Clerk session only) ----------------
