@@ -298,18 +298,70 @@ test("ingest with a valid key stores raw events + rollups (202)", async () => {
     .from(schema.sdkEvents)
     .where(eq(schema.sdkEvents.tenantId, tenant!.id));
   assert.ok(rawCount.length >= 3);
+});
 
-  // tool registry + site memory snapshots upserted
-  const tools = await db
-    .select({ name: schema.sdkToolRegistry.toolName })
+test("POST /v1/sdk/tools upserts the tool registry (schema + tokens)", async () => {
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/sdk/tools",
+    headers: { authorization: `Bearer ${ingestKey}` },
+    payload: {
+      siteId: "shop-acme",
+      tools: [
+        {
+          name: "cart.add",
+          group: "cart",
+          page: "browse",
+          inputSchema: { type: "object", properties: { itemId: { type: "string" } } },
+          outputSchema: { type: "object", properties: { ok: { type: "boolean" } } },
+          tokens: 42
+        }
+      ]
+    }
+  });
+  assert.equal(res.statusCode, 202);
+  assert.equal(res.json().tools, 1);
+
+  const [tenant] = await db
+    .select({ id: schema.tenants.id })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.clerkOrgId, ORG));
+  const [tool] = await db
+    .select({
+      name: schema.sdkToolRegistry.toolName,
+      page: schema.sdkToolRegistry.page,
+      tokens: schema.sdkToolRegistry.tokens
+    })
     .from(schema.sdkToolRegistry)
     .where(eq(schema.sdkToolRegistry.tenantId, tenant!.id));
-  assert.ok(tools.some((t) => t.name === "cart.add"));
-  const mem = await db
-    .select({ score: schema.sdkSiteMemory.score })
+  assert.equal(tool?.name, "cart.add");
+  assert.equal(tool?.page, "browse");
+  assert.equal(tool?.tokens, 42);
+});
+
+test("POST /v1/sdk/memory upserts the site-memory snapshot + score", async () => {
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/sdk/memory",
+    headers: { authorization: `Bearer ${ingestKey}` },
+    payload: {
+      siteId: "shop-acme",
+      snapshot: { siteMap: { pages: [{ path: "/", name: "Home" }] } },
+      score: 82
+    }
+  });
+  assert.equal(res.statusCode, 202);
+
+  const [tenant] = await db
+    .select({ id: schema.tenants.id })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.clerkOrgId, ORG));
+  const [mem] = await db
+    .select({ score: schema.sdkSiteMemory.score, snapshot: schema.sdkSiteMemory.snapshot })
     .from(schema.sdkSiteMemory)
     .where(eq(schema.sdkSiteMemory.tenantId, tenant!.id));
-  assert.equal(mem[0]?.score, 82);
+  assert.equal(mem?.score, 82);
+  assert.ok(mem?.snapshot);
 });
 
 test("ingest is idempotent on event id (re-POST dedupes)", async () => {
@@ -332,14 +384,14 @@ test("ingest is idempotent on event id (re-POST dedupes)", async () => {
   assert.equal(again.json().deduped, 3);
 });
 
-test("an ingest key cannot read tenant data (events-only)", async () => {
+test("an ingest key cannot read tenant data (write-only)", async () => {
   const res = await app.inject({
     method: "GET",
     url: "/v1/jobs",
     headers: { authorization: `Bearer ${ingestKey}` }
   });
   assert.equal(res.statusCode, 403);
-  assert.equal(res.json().error, "ingest_key_events_only");
+  assert.equal(res.json().error, "ingest_key_write_only");
 });
 
 test("an unknown ingest key is rejected", async () => {
