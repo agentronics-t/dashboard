@@ -111,7 +111,7 @@ export function Sidebar() {
         <Logomark size={26} onDark={dark} />
         {open && (
           <div>
-            <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: "-0.01em", lineHeight: 1.1 }}>Agentronics</div>
+            <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: "-0.02em", lineHeight: 1.1 }}>agentronics</div>
             <div style={{ fontSize: 11, color: "var(--content-muted)", letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 600 }}>Intelligence</div>
           </div>
         )}

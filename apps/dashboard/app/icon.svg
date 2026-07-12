@@ -1,5 +1,7 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="4" y="1" width="24" height="30" rx="4" fill="#736ced"/>
-  <rect x="9" y="5" width="14" height="11" rx="1.5" fill="#ff9e1c"/>
-  <rect x="9" y="19" width="14" height="11" rx="1.5" fill="#ff9e1c"/>
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="180" height="180" rx="40" fill="#1f1c4b"/>
+  <g transform="translate(0,4)">
+    <polygon points="85,38 108,38 125,72 94,80 63,132 29,132" fill="#5b4fd1" stroke="#5b4fd1" stroke-width="9" stroke-linejoin="round"/>
+    <polygon points="108,98 138,98 154,132 123,132" fill="#e58313" stroke="#e58313" stroke-width="9" stroke-linejoin="round"/>
+  </g>
 </svg>
