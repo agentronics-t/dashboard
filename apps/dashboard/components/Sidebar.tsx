@@ -5,16 +5,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logomark } from "./Logomark";
 
-const NAV = [
-  { href: "/overview", label: "Overview", icon: "grid" },
-  { href: "/forecast", label: "Forecast", icon: "trend" },
-  { href: "/insights", label: "Insights", icon: "spark" },
-  { href: "/plugins", label: "Plugins", icon: "plug" },
-  { href: "/chat", label: "Agent Chat", icon: "chat" }
-];
-
-// SDK section — fed by events streamed to the intel-api SDK ingest endpoint.
-// Each page shows an empty state until the customer connects an ingest key.
+// Agentronics is one product now — the SDK and the dashboard it feeds.
+// Fed by events streamed to the intel-api SDK ingest endpoint; each page
+// shows an empty state until the customer connects an ingest key.
 const SDK_NAV = [
   { href: "/detect", label: "Detect", icon: "radar" },
   { href: "/auth", label: "Auth", icon: "key" },
@@ -112,16 +105,12 @@ export function Sidebar() {
         {open && (
           <div>
             <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: "-0.02em", lineHeight: 1.1 }}>agentronics</div>
-            <div style={{ fontSize: 11, color: "var(--content-muted)", letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 600 }}>Intelligence</div>
+            <div style={{ fontSize: 11, color: "var(--content-muted)", letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 600 }}>SDK</div>
           </div>
         )}
       </div>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 22, flex: 1, minHeight: 0, overflowY: "auto" }}>
-        {open && <div style={sectionLabel}>Intelligence</div>}
-        {NAV.map((n) => <NavBtn key={n.href} {...n} />)}
-
-        {open && <div style={{ ...sectionLabel, marginTop: 16 }}>SDK</div>}
         {SDK_NAV.map((n) => <NavBtn key={n.href} {...n} />)}
       </nav>
 
@@ -139,12 +128,3 @@ export function Sidebar() {
     </aside>
   );
 }
-
-const sectionLabel: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: "0.08em",
-  textTransform: "uppercase",
-  color: "var(--content-muted)",
-  padding: "8px 11px 4px"
-};
