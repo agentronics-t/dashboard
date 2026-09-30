@@ -35,12 +35,14 @@ const secrets = new FakeSecrets();
 
 let app: ReturnType<typeof buildServer>;
 let token!: string;
+let jwkSet!: ReturnType<typeof createLocalJWKSet>;
 
 before(async () => {
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const jwk = await exportJWK(publicKey);
   jwk.alg = "RS256";
   const getKey = createLocalJWKSet({ keys: [jwk] });
+  jwkSet = getKey;
 
   token = await new SignJWT({ org_id: ORG })
     .setProtectedHeader({ alg: "RS256" })
@@ -53,8 +55,9 @@ before(async () => {
   app = buildServer({
     db,
     auth: clerkVerifier({ issuer: ISSUER, getKey }),
-    tasks,
-    secrets,
+    // intelligence routes are retired + off by default; mount them here so the
+    // legacy connector/import tests keep guarding that code path.
+    intelligence: { tasks, secrets },
     internalAuth: {
       async verify(token: string) {
         if (token !== "internal-svc-token") {
@@ -203,7 +206,7 @@ test("internal token cannot read jobs or connectors", async () => {
       headers: { authorization: "Bearer internal-svc-token" }
     });
     assert.equal(res.statusCode, 403);
-    assert.equal(res.json().error, "internal_caller_imports_only");
+    assert.equal(res.json().error, "internal_caller_restricted");
   }
 });
 
@@ -426,4 +429,65 @@ test("a revoked key is rejected on ingest", async () => {
     payload: sampleBatch()
   });
   assert.equal(res.statusCode, 401);
+});
+
+// ---- agent-auth pivot: intelligence off by default + retention ------------
+
+test("without intelligence deps, connector/import/job routes do not exist", async () => {
+  const bare = buildServer({ db, auth: clerkVerifier({ issuer: ISSUER, getKey: jwkSet }) });
+  await bare.ready();
+  try {
+    for (const [method, url] of [
+      ["GET", "/v1/connectors"],
+      ["POST", "/v1/imports"],
+      ["GET", "/v1/jobs"]
+    ] as const) {
+      const res = await bare.inject({ method, url, headers: authed(), ...(method === "POST" ? { payload: {} } : {}) });
+      assert.equal(res.statusCode, 404, `${method} ${url} should be unmounted`);
+    }
+  } finally {
+    await bare.close();
+  }
+});
+
+test("prune is internal-only: a Clerk session and an ingest key are both 403", async () => {
+  for (const authorization of [`Bearer ${token}`, `Bearer ${ingestKey}`]) {
+    const res = await app.inject({ method: "POST", url: "/v1/maintenance/prune", headers: { authorization } });
+    assert.equal(res.statusCode, 403);
+  }
+});
+
+test("prune (internal) deletes sdk_events past the retention window, keeps recent", async () => {
+  const [tenant] = await db
+    .select({ id: schema.tenants.id })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.clerkOrgId, ORG));
+  const base = {
+    tenantId: tenant!.id,
+    siteId: "prune-site",
+    sessionId: "sess_prune",
+    occurredAt: new Date(),
+    type: "agent.detected" as const,
+    outcome: "success" as const
+  };
+  const oldId = `evt_old_${randomUUID()}`;
+  const newId = `evt_new_${randomUUID()}`;
+  await db.insert(schema.sdkEvents).values([
+    { ...base, id: oldId, ingestedAt: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000) },
+    { ...base, id: newId, ingestedAt: new Date() }
+  ]);
+
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/maintenance/prune",
+    headers: { authorization: "Bearer internal-svc-token" }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.ok(res.json().pruned_events >= 1);
+
+  const ids = (
+    await db.select({ id: schema.sdkEvents.id }).from(schema.sdkEvents).where(eq(schema.sdkEvents.siteId, "prune-site"))
+  ).map((r) => r.id);
+  assert.ok(!ids.includes(oldId), "old event pruned");
+  assert.ok(ids.includes(newId), "recent event kept");
 });
