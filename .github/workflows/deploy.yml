@@ -1,9 +1,13 @@
 name: Deploy
 
 # Tag-driven deploys via Workload Identity Federation (no long-lived SA keys).
-# Set up WIF once with infra/setup-wif.sh, then add repo variables:
-#   GCP_PROJECT, GCP_WIF_PROVIDER, GCP_DEPLOYER_SA
-# Tag a release to deploy:  git tag v0.1.0 && git push --tags
+# One-time setup on a (new) GCP project: infra/bring-up.sh, then
+# infra/setup-wif.sh, then add repo Variables:
+#   GCP_PROJECT, GCP_WIF_PROVIDER, GCP_DEPLOYER_SA, GCP_REGION (default us-east1)
+# Tag a release to deploy:  git tag v0.3.0 && git push origin v0.3.0
+#
+# Only intel-api ships. The retired intelligence services (intel-worker,
+# intel-ml) are no longer built or deployed — see infra/README.md.
 on:
   push:
     tags: ["v*"]
@@ -17,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PROJECT: ${{ vars.GCP_PROJECT }}
-      REGION: asia-south1
+      REGION: ${{ vars.GCP_REGION || 'us-east1' }}
     steps:
       - uses: actions/checkout@v4
       - id: auth
@@ -26,24 +30,38 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOYER_SA }}
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-      - name: Build, push, deploy all services
+
+      # Apply pending Drizzle migrations to the serving Neon BEFORE rolling out
+      # new code, so a new revision never lands on an un-migrated schema. The
+      # deploy SA gets secretAccessor on `neon-database-url` only (setup-wif.sh).
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Migrate serving schema (Neon)
         run: |
           set -euo pipefail
-          TS=$(date +%Y%m%d-%H%M%S)
-          AR="${REGION}-docker.pkg.dev/${PROJECT}/intel"
-          for svc in intel-api intel-worker; do
-            img="$AR/$svc:$TS"
-            docker build --platform linux/amd64 --provenance=false --sbom=false \
-              -f apps/$svc/Dockerfile -t "$img" .
-            docker push "$img"
-            gcloud run services update $svc --image "$img" --region "$REGION" --project "$PROJECT" --quiet
-          done
-          imgml="$AR/intel-ml:$TS"
-          docker build --platform linux/amd64 --provenance=false --sbom=false -t "$imgml" apps/intel-ml
-          docker push "$imgml"
-          gcloud run jobs update intel-ml --image "$imgml" --region "$REGION" --project "$PROJECT" --quiet
+          DB=$(gcloud secrets versions access latest --secret=neon-database-url --project "$PROJECT")
+          echo "::add-mask::${DB}"
+          umask 077
+          printf 'DATABASE_URL=%s\n' "${DB}" > packages/intel-schema/.env
+          pnpm --filter @agentronics/intel-schema db:migrate
+          rm -f packages/intel-schema/.env
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+      - name: Build, push, deploy intel-api
+        run: |
+          set -euo pipefail
+          img="${REGION}-docker.pkg.dev/${PROJECT}/intel/intel-api:$(date +%Y%m%d-%H%M%S)"
+          docker build --platform linux/amd64 --provenance=false --sbom=false \
+            -f apps/intel-api/Dockerfile -t "$img" .
+          docker push "$img"
+          gcloud run services update intel-api --image "$img" --region "$REGION" --project "$PROJECT" --quiet
       - name: Smoke check API health
         run: |
           url=$(gcloud run services describe intel-api --region "$REGION" --project "$PROJECT" --format='value(status.url)')

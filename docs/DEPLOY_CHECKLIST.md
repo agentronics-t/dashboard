@@ -1,5 +1,10 @@
 # DEPLOY_CHECKLIST — Agentronics Intelligence Platform
 
+> **Superseded (2026-09-30).** Agentronics is agent authentication only; a deploy
+> is now one service. Use `infra/bring-up.sh` and `docs/GCP_ACCOUNT_MOVE.md`.
+> This checklist describes the retired intelligence platform and is kept for
+> reference.
+
 Pre-deploy gates. Run top-to-bottom for a clean-environment bring-up; the
 infra scripts are idempotent, so re-running is safe.
 

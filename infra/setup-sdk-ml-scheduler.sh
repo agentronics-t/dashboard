@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED — intelligence platform only. Not part of a normal deploy; use
+# infra/bring-up.sh. Kept for reference (see infra/README.md).
 # setup-sdk-ml-scheduler.sh — daily Cloud Scheduler job that runs the SDK ML
 # pass (`intel-ml --sdk`) over every tenant with SDK events: forecasts +
 # insights into sdk_forecasts / sdk_insights. Idempotent.

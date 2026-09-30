@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED — intelligence platform only. Not part of a normal deploy; use
+# infra/bring-up.sh. Kept for reference (see infra/README.md).
 # setup-scheduler.sh — Cloud Scheduler orchestration (STEP 8). Idempotent.
 #
 # Creates:

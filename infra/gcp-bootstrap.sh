@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED — intelligence platform only. Not part of a normal deploy; use
+# infra/bring-up.sh. Kept for reference (see infra/README.md).
 # gcp-bootstrap.sh — Agentronics Intelligence Platform GCP foundation (STEP 0)
 #
 # Idempotent: safe to re-run. Every resource is checked before creation.
