@@ -358,3 +358,29 @@ export async function getUsage(tenantId: string) {
     );
   return { period, governedCalls: Number(row?.governed_calls ?? 0) };
 }
+
+/**
+ * Monthly active agents (MAA) — unique verified agent identities that
+ * authenticated this calendar month (UTC). Identity = metadata.subject of a
+ * successful auth.identity_presented event (falls back to the vendor for
+ * browser-verified identities without a subject). See plan-entitlements.md.
+ */
+export async function getMonthlyActiveAgents(tenantId: string): Promise<number> {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const [row] = await db()
+    .select({
+      maa: sql<number>`count(distinct coalesce(${schema.sdkEvents.metadata}->>'subject', ${schema.sdkEvents.agentVendor}))`
+    })
+    .from(schema.sdkEvents)
+    .where(
+      and(
+        eq(schema.sdkEvents.tenantId, tenantId),
+        eq(schema.sdkEvents.type, "auth.identity_presented"),
+        eq(schema.sdkEvents.outcome, "success"),
+        inArray(schema.sdkEvents.trust, ["verified", "linked"]),
+        gte(schema.sdkEvents.occurredAt, monthStart)
+      )
+    );
+  return Number(row?.maa ?? 0);
+}

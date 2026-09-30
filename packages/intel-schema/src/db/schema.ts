@@ -4,6 +4,7 @@
 
 import {
   bigint,
+  boolean,
   date,
   doublePrecision,
   index,
@@ -406,3 +407,46 @@ export const sdkInsights = pgTable(
     index("sdk_insights_tenant_created_idx").on(t.tenantId, t.createdAt)
   ]
 );
+
+// ---- billing (Razorpay Subscriptions) ---------------------------------------
+// One row per Razorpay subscription we create. Razorpay webhooks are the source
+// of truth for `status`; the tenant's plan is the newest row in
+// active/authenticated/pending (see landing_page/docs/plan-entitlements.md).
+
+export const billingSubscriptions = pgTable(
+  "billing_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    razorpaySubscriptionId: text("razorpay_subscription_id").notNull(),
+    razorpayPlanId: text("razorpay_plan_id").notNull(),
+    plan: text("plan").notNull(), // pro | business
+    cycle: text("cycle").notNull(), // monthly | yearly
+    currency: text("currency").notNull(), // USD | INR
+    // created | authenticated | active | pending | halted | cancelled |
+    // completed | expired | paused
+    status: text("status").notNull(),
+    // created_at of the newest Razorpay event applied — webhooks can arrive
+    // out of order, so older events never overwrite newer state.
+    statusAt: timestamp("status_at", { withTimezone: true }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    cancelAtCycleEnd: boolean("cancel_at_cycle_end").notNull().default(false),
+    createdBy: text("created_by"), // Clerk user id
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex("billing_subscriptions_rzp_uq").on(t.razorpaySubscriptionId),
+    index("billing_subscriptions_tenant_idx").on(t.tenantId, t.createdAt)
+  ]
+);
+
+/** Processed Razorpay webhook events (x-razorpay-event-id) — idempotency. */
+export const billingEvents = pgTable("billing_events", {
+  eventId: text("event_id").primaryKey(),
+  event: text("event").notNull(),
+  razorpaySubscriptionId: text("razorpay_subscription_id"),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow()
+});
