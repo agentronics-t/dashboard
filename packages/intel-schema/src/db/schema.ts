@@ -450,3 +450,28 @@ export const billingEvents = pgTable("billing_events", {
   razorpaySubscriptionId: text("razorpay_subscription_id"),
   receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow()
 });
+
+// ---- agent API keys (agk_…) --------------------------------------------------
+// Minted in the console's Configure → API keys. Only the SHA-256 is stored;
+// the customer's middleware verifies keys with staticKeyVerifier() over the
+// AGENT_KEYS map the console exports (hash → identity).
+export const agentKeys = pgTable(
+  "agent_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
+    name: text("name").notNull(),
+    vendor: text("vendor"),
+    hashedKey: text("hashed_key").notNull(), // sha256 hex (matches hashAgentKey)
+    prefix: text("prefix").notNull(), // agk_ + first 6 chars, for display
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true })
+  },
+  (t) => [
+    uniqueIndex("agent_keys_hash_uq").on(t.hashedKey),
+    index("agent_keys_tenant_idx").on(t.tenantId)
+  ]
+);

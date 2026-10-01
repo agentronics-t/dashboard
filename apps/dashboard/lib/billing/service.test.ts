@@ -175,27 +175,29 @@ function delivery(event: string, sub: Partial<RazorpaySubscription> & { id: stri
 }
 
 test("webhooks: signature, idempotency, ordering, lifecycle", async () => {
+  const run = randomUUID(); // billing_events is global — keep event ids unique per run
+  const ev = (n: number) => `evt_${run}_${n}`;
   const t = await newTenant();
   const { subscriptionId: id } = await startCheckout(deps(), t, "u", { plan: "pro", cycle: "monthly", currency: "USD" });
   const d = { db, config };
 
   const act = delivery("subscription.activated", { id, status: "active", current_end: 1_800_000_000 }, 1_700_000_100);
-  await assert.rejects(applyWebhook(d, act.raw, "forged", "evt_1"), { code: "invalid_webhook_signature" });
-  assert.equal(await applyWebhook(d, act.raw, act.sig, "evt_1"), "applied");
+  await assert.rejects(applyWebhook(d, act.raw, "forged", ev(1)), { code: "invalid_webhook_signature" });
+  assert.equal(await applyWebhook(d, act.raw, act.sig, ev(1)), "applied");
   assert.equal((await currentPlan(db, t)).tier, "pro");
-  assert.equal(await applyWebhook(d, act.raw, act.sig, "evt_1"), "duplicate");
+  assert.equal(await applyWebhook(d, act.raw, act.sig, ev(1)), "duplicate");
 
   // an older event delivered late must not regress state
   const old = delivery("subscription.halted", { id, status: "halted" }, 1_700_000_050);
-  assert.equal(await applyWebhook(d, old.raw, old.sig, "evt_0"), "stale");
+  assert.equal(await applyWebhook(d, old.raw, old.sig, ev(0)), "stale");
   assert.equal((await currentPlan(db, t)).tier, "pro");
 
   // payment retry window keeps the plan; halted drops it
   const pend = delivery("subscription.pending", { id, status: "pending" }, 1_700_000_200);
-  assert.equal(await applyWebhook(d, pend.raw, pend.sig, "evt_2"), "applied");
+  assert.equal(await applyWebhook(d, pend.raw, pend.sig, ev(2)), "applied");
   assert.equal((await currentPlan(db, t)).tier, "pro");
   const halt = delivery("subscription.halted", { id, status: "halted" }, 1_700_000_300);
-  assert.equal(await applyWebhook(d, halt.raw, halt.sig, "evt_3"), "applied");
+  assert.equal(await applyWebhook(d, halt.raw, halt.sig, ev(3)), "applied");
   assert.equal((await currentPlan(db, t)).tier, "free");
 });
 
@@ -203,7 +205,7 @@ test("webhooks ignore other events and subscriptions we did not create", async (
   const d = { db, config };
   const pay = { raw: JSON.stringify({ event: "payment.captured", payload: {} }), sig: "" };
   pay.sig = sign(config.webhookSecret, pay.raw);
-  assert.equal(await applyWebhook(d, pay.raw, pay.sig, "evt_pay"), "ignored");
+  assert.equal(await applyWebhook(d, pay.raw, pay.sig, `evt_pay_${randomUUID()}`), "ignored");
   // a real-looking delivery whose notes claim a tenant must still be ignored
   const t = await newTenant();
   const foreign = delivery("subscription.activated", { id: "sub_ForeignOne", status: "active", notes: { tenant_id: t } }, 1_700_000_000);

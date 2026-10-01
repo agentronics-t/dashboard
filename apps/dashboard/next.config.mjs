@@ -6,11 +6,11 @@ const nextConfig = {
   async redirects() {
     // The intelligence platform is retired (see app/_intelligence/README.md).
     // Send old bookmarks to the console home instead of a 404.
-    return ["/forecast", "/insights", "/plugins", "/chat"].map((source) => ({
-      source,
-      destination: "/",
-      permanent: false
-    }));
+    // Retired intelligence pages + the pre-pivot SDK pillar pages
+    // (app/_hidden/README.md) → console home.
+    const retired = ["/forecast", "/insights", "/plugins", "/chat", "/detect", "/authz", "/webmcp-tools", "/knaph", "/analytics"]
+      .map((source) => ({ source, destination: "/", permanent: false }));
+    return [...retired, { source: "/auth", destination: "/agents", permanent: false }];
   }
 };
 

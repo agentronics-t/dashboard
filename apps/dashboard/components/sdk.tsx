@@ -12,7 +12,7 @@ export function SdkEmpty({ feature }: { feature: string }) {
       </div>
       <div style={{ fontSize: 13, color: "var(--content-muted)", marginTop: 6, maxWidth: 460, marginInline: "auto" }}>
         Add an SDK ingest key in{" "}
-        <a href="/settings" style={{ color: "var(--brand)" }}>
+        <a href="/configure/api-keys" style={{ color: "var(--brand)" }}>
           Settings
         </a>{" "}
         and stream events from your backend to <code>POST /v1/sdk/events</code>.
