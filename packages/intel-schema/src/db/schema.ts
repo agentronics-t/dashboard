@@ -424,7 +424,7 @@ export const billingSubscriptions = pgTable(
     razorpayPlanId: text("razorpay_plan_id").notNull(),
     plan: text("plan").notNull(), // pro | business
     cycle: text("cycle").notNull(), // monthly | yearly
-    currency: text("currency").notNull(), // USD | INR
+    currency: text("currency").notNull(), // always "USD" (pricing is USD only)
     // created | authenticated | active | pending | halted | cancelled |
     // completed | expired | paused
     status: text("status").notNull(),
