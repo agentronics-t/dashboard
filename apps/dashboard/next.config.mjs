@@ -1,5 +1,23 @@
+// Baseline hardening for the authenticated console. No script CSP: Clerk and
+// Razorpay Checkout load their own scripts/frames and a wrong allowlist breaks
+// sign-in or payment. frame-ancestors only controls who may frame the console
+// (clickjacking on Billing/Cancel/key actions) — it doesn't restrict what we
+// embed, so Razorpay's checkout iframe is unaffected.
+const SECURITY_HEADERS = [
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+  },
   // intel-schema ships compiled dist; nothing to transpile from source.
   serverExternalPackages: ["postgres", "@google/genai"],
   eslint: { ignoreDuringBuilds: true },

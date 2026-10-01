@@ -111,6 +111,14 @@ test("startCheckout creates a server-priced subscription and records it", async 
   assert.equal((await currentPlan(db, t)).tier, "free", "a created (unpaid) subscription grants nothing");
 });
 
+test("repeated checkout clicks reuse the unpaid subscription for the same plan", async () => {
+  const t = await newTenant();
+  const a = await startCheckout(deps(), t, "u", { plan: "pro", cycle: "monthly", currency: "USD" });
+  const b = await startCheckout(deps(), t, "u", { plan: "pro", cycle: "monthly", currency: "USD" });
+  assert.equal(a.subscriptionId, b.subscriptionId);
+  assert.equal(rzp.created.length, 1, "only one Razorpay subscription created");
+});
+
 test("confirmCheckout verifies against the STORED subscription and re-reads Razorpay", async () => {
   const t = await newTenant();
   const { subscriptionId } = await startCheckout(deps(), t, "u", { plan: "pro", cycle: "monthly", currency: "USD" });

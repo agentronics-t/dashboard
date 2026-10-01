@@ -8,7 +8,12 @@ import { getTenantId } from "@/lib/tenant";
 export const dynamic = "force-dynamic";
 
 export default async function AgentPage({ params }: { params: Promise<{ id: string }> }) {
-  const identity = decodeURIComponent((await params).id);
+  let identity: string;
+  try {
+    identity = decodeURIComponent((await params).id);
+  } catch {
+    notFound(); // malformed escape sequence
+  }
   const tenantId = await getTenantId();
   const [directory, logs] = await Promise.all([
     getAgentDirectory(tenantId, 30, 500),

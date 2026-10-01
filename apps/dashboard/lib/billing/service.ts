@@ -2,7 +2,7 @@
 // Pure of Next/Clerk so it runs under `node --test` against a scratch DB; the
 // route handlers resolve the tenant + user and inject db, client and config.
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { schema, type Db } from "@agentronics/intel-schema/db";
 import {
   LIVE_STATUSES,
@@ -101,6 +101,29 @@ export async function startCheckout(
   }
   const razorpayPlanId = config.planIds[planEnvKey(plan, cycle, currency)];
   if (!razorpayPlanId) throw new BillingError(503, "plan_not_configured", planEnvKey(plan, cycle, currency));
+  const checkout = () => ({
+    keyId: config.keyId,
+    amount: TIERS[plan].prices![currency][cycle],
+    currency,
+    planName: TIERS[plan].name
+  });
+
+  // Reuse an unpaid checkout for the same plan from the last hour instead of
+  // creating a new Razorpay subscription on every click (they expire in 2h).
+  const [pending] = await db
+    .select({ id: schema.billingSubscriptions.razorpaySubscriptionId })
+    .from(schema.billingSubscriptions)
+    .where(
+      and(
+        eq(schema.billingSubscriptions.tenantId, tenantId),
+        eq(schema.billingSubscriptions.razorpayPlanId, razorpayPlanId),
+        eq(schema.billingSubscriptions.status, "created"),
+        gte(schema.billingSubscriptions.createdAt, new Date(Date.now() - 3600_000))
+      )
+    )
+    .orderBy(desc(schema.billingSubscriptions.createdAt))
+    .limit(1);
+  if (pending) return { subscriptionId: pending.id, ...checkout() };
 
   let sub: RazorpaySubscription;
   try {
@@ -125,13 +148,7 @@ export async function startCheckout(
     // status_at stays null: only webhook timestamps (Razorpay's clock) order state
     createdBy: userId
   });
-  return {
-    subscriptionId: sub.id,
-    keyId: config.keyId,
-    amount: TIERS[plan].prices![currency][cycle],
-    currency,
-    planName: TIERS[plan].name
-  };
+  return { subscriptionId: sub.id, ...checkout() };
 }
 
 /**
