@@ -4,7 +4,7 @@
 // metadata.subject (verified agent id), else vendor, else session id.
 import "server-only";
 import { schema } from "@agentronics/intel-schema/db";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { db } from "./tenant";
 
 const AUTH = "auth.identity_presented" as const;
@@ -20,7 +20,6 @@ export interface AgentRow {
   verified: boolean;
   requests: number;
   failures: number;
-  blocked: number;
   firstSeen: Date;
   lastSeen: Date;
   lastError: string | null;
@@ -35,8 +34,7 @@ export async function getAgentDirectory(tenantId: string, days = 30, limit = 200
       method: sql<string | null>`(array_agg(${e.protocol} order by ${e.occurredAt} desc))[1]`,
       verified: sql<boolean>`bool_or(${e.outcome} = 'success' and ${e.trust} in ('verified','linked'))`,
       requests: sql<number>`count(*)::int`,
-      failures: sql<number>`(count(*) filter (where ${e.outcome} = 'error'))::int`,
-      blocked: sql<number>`(count(*) filter (where ${e.outcome} = 'blocked'))::int`,
+      failures: sql<number>`(count(*) filter (where ${e.outcome} <> 'success'))::int`,
       firstSeen: sql<Date>`min(${e.occurredAt})`,
       lastSeen: sql<Date>`max(${e.occurredAt})`,
       lastError: sql<string | null>`(array_agg(${e.error} order by ${e.occurredAt} desc) filter (where ${e.error} is not null))[1]`
@@ -52,9 +50,8 @@ export async function getAgentDirectory(tenantId: string, days = 30, limit = 200
 export interface AuthSummary {
   verified: number;
   unverified: number;
-  blocked: number;
   byMethod: { method: string; verified: number; failed: number }[];
-  daily: { date: string; verified: number; unverified: number; blocked: number }[];
+  daily: { date: string; verified: number; unverified: number }[];
 }
 
 export async function getAuthSummary(tenantId: string, days = 7): Promise<AuthSummary> {
@@ -62,8 +59,7 @@ export async function getAuthSummary(tenantId: string, days = 7): Promise<AuthSu
   const [totals] = await db()
     .select({
       verified: sql<number>`(count(*) filter (where ${e.outcome} = 'success'))::int`,
-      unverified: sql<number>`(count(*) filter (where ${e.outcome} = 'error'))::int`,
-      blocked: sql<number>`(count(*) filter (where ${e.outcome} = 'blocked'))::int`
+      unverified: sql<number>`(count(*) filter (where ${e.outcome} <> 'success'))::int`
     })
     .from(e)
     .where(where);
@@ -81,8 +77,7 @@ export async function getAuthSummary(tenantId: string, days = 7): Promise<AuthSu
     .select({
       date: sql<string>`to_char(date_trunc('day', ${e.occurredAt}), 'YYYY-MM-DD')`,
       verified: sql<number>`(count(*) filter (where ${e.outcome} = 'success'))::int`,
-      unverified: sql<number>`(count(*) filter (where ${e.outcome} = 'error'))::int`,
-      blocked: sql<number>`(count(*) filter (where ${e.outcome} = 'blocked'))::int`
+      unverified: sql<number>`(count(*) filter (where ${e.outcome} <> 'success'))::int`
     })
     .from(e)
     .where(where)
@@ -91,7 +86,6 @@ export async function getAuthSummary(tenantId: string, days = 7): Promise<AuthSu
   return {
     verified: totals?.verified ?? 0,
     unverified: totals?.unverified ?? 0,
-    blocked: totals?.blocked ?? 0,
     byMethod,
     daily
   };
@@ -107,17 +101,19 @@ export interface AuthLogRow {
   outcome: string;
   page: string | null;
   error: string | null;
-  decision: string | null;
 }
 
-export type OutcomeFilter = "all" | "success" | "error" | "blocked";
+export type OutcomeFilter = "all" | "success" | "error";
 
 export async function getAuthLogs(
   tenantId: string,
   opts: { outcome?: OutcomeFilter; agent?: string; limit?: number } = {}
 ): Promise<AuthLogRow[]> {
   const conds = [eq(e.tenantId, tenantId), eq(e.type, AUTH)];
-  if (opts.outcome && opts.outcome !== "all") conds.push(eq(e.outcome, opts.outcome));
+  // Anything that isn't a success is unverified — including legacy 'blocked'
+  // rows from SDK versions that had access rules (Agentronics never blocks now).
+  if (opts.outcome === "success") conds.push(eq(e.outcome, "success"));
+  if (opts.outcome === "error") conds.push(ne(e.outcome, "success"));
   if (opts.agent) conds.push(sql`${identityExpr} = ${opts.agent}`);
   return db()
     .select({
@@ -129,8 +125,7 @@ export async function getAuthLogs(
       trust: e.trust,
       outcome: e.outcome,
       page: e.page,
-      error: e.error,
-      decision: sql<string | null>`${e.metadata}->>'decision'`
+      error: e.error
     })
     .from(e)
     .where(and(...conds))

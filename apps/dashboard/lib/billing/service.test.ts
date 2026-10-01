@@ -21,7 +21,7 @@ const config: BillingConfig = {
   keyId: "rzp_test_key",
   keySecret: "test_key_secret",
   webhookSecret: "whsec_test",
-  planIds: { RAZORPAY_PLAN_PRO_MONTHLY_USD: "plan_pro_m_usd", RAZORPAY_PLAN_BUSINESS_YEARLY_INR: "plan_biz_y_inr" }
+  planIds: { RAZORPAY_PLAN_PRO_MONTHLY_USD: "plan_pro_m_usd", RAZORPAY_PLAN_BUSINESS_YEARLY_USD: "plan_biz_y_usd" }
 };
 
 class FakeRazorpay implements RazorpayClient {
@@ -93,6 +93,7 @@ test("startCheckout rejects bad input and unconfigured plans", async () => {
   await assert.rejects(startCheckout(deps(), t, "user_1", { plan: "free", cycle: "monthly", currency: "USD" }), { code: "invalid_plan" });
   await assert.rejects(startCheckout(deps(), t, "user_1", { plan: "pro", cycle: "weekly", currency: "USD" }), { code: "invalid_plan" });
   await assert.rejects(startCheckout(deps(), t, "user_1", { plan: "pro", cycle: "yearly", currency: "EUR" }), { code: "invalid_plan" });
+  await assert.rejects(startCheckout(deps(), t, "user_1", { plan: "pro", cycle: "monthly", currency: "INR" }), { code: "invalid_plan" }); // USD only
   await assert.rejects(startCheckout(deps(), t, "user_1", { plan: "business", cycle: "monthly", currency: "USD" }), {
     code: "plan_not_configured"
   });
@@ -164,7 +165,7 @@ test("a second checkout while subscribed is refused", async () => {
     razorpay_subscription_id: subscriptionId,
     razorpay_signature: sign(config.keySecret, `p|${subscriptionId}`)
   });
-  await assert.rejects(startCheckout(deps(), t, "u", { plan: "business", cycle: "yearly", currency: "INR" }), {
+  await assert.rejects(startCheckout(deps(), t, "u", { plan: "business", cycle: "yearly" }), {
     code: "already_subscribed"
   });
 });

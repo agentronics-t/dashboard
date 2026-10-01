@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { TIERS, formatPrice, type Currency, type Cycle, type PaidTier, type Tier } from "@/lib/billing/plans";
+import { TIERS, formatPrice, type Cycle, type PaidTier, type Tier } from "@/lib/billing/plans";
 
 declare global {
   interface Window {
@@ -43,7 +43,7 @@ const MESSAGES: Record<string, string> = {
   auth_not_configured: "Sign-in isn't configured on this deployment.",
   billing_admin_only: "Only organization admins can change the plan.",
   already_subscribed: "You already have an active plan. Cancel it before switching.",
-  plan_not_configured: "This plan isn't available in this currency yet.",
+  plan_not_configured: "This plan isn't available yet.",
   invalid_signature: "We couldn't verify the payment. You haven't been charged twice — contact support."
 };
 
@@ -74,11 +74,10 @@ export function PlanPicker({
 }: {
   current: Tier;
   enabled: boolean;
-  initial: { plan: PaidTier | null; cycle: Cycle; currency: Currency };
+  initial: { plan: PaidTier | null; cycle: Cycle };
 }) {
   const router = useRouter();
   const [cycle, setCycle] = useState<Cycle>(initial.cycle);
-  const [currency, setCurrency] = useState<Currency>(initial.currency);
   const [busy, setBusy] = useState<PaidTier | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -89,8 +88,7 @@ export function PlanPicker({
     try {
       const co = await post<{ subscriptionId: string; keyId: string; planName: string }>("/api/billing/subscribe", {
         plan,
-        cycle,
-        currency
+        cycle
       });
       await loadCheckout();
       const rzp = new window.Razorpay!({
@@ -132,10 +130,7 @@ export function PlanPicker({
           <button type="button" style={seg(cycle === "monthly")} onClick={() => setCycle("monthly")}>Monthly</button>
           <button type="button" style={seg(cycle === "yearly")} onClick={() => setCycle("yearly")}>Yearly · 16% off</button>
         </div>
-        <div style={segWrap} role="group" aria-label="Currency">
-          <button type="button" style={seg(currency === "USD")} onClick={() => setCurrency("USD")}>USD</button>
-          <button type="button" style={seg(currency === "INR")} onClick={() => setCurrency("INR")}>INR</button>
-        </div>
+        <span style={{ alignSelf: "center", fontSize: 12, color: "var(--content-muted)" }}>Prices in USD</span>
       </div>
 
       {error && (
@@ -154,7 +149,7 @@ export function PlanPicker({
           const info = TIERS[t];
           const isCurrent = t === current;
           const suggested = initial.plan === t && !isCurrent;
-          const price = info.prices ? formatPrice(info.prices[currency][cycle], currency) : t === "free" ? formatPrice(0, currency) : "Custom";
+          const price = info.prices ? formatPrice(info.prices[cycle]) : t === "free" ? formatPrice(0) : "Custom";
           return (
             <div
               key={t}

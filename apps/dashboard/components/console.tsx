@@ -26,7 +26,8 @@ export const tableCell: CSSProperties = {
 const OUTCOME: Record<string, { kind: string; label: string }> = {
   success: { kind: "succeeded", label: "Verified" },
   error: { kind: "warning", label: "Unverified" },
-  blocked: { kind: "failed", label: "Blocked" }
+  // legacy rows from SDK versions with access rules — Agentronics never blocks now
+  blocked: { kind: "warning", label: "Unverified" }
 };
 
 export function OutcomeBadge({ outcome }: { outcome: string }) {
@@ -111,7 +112,7 @@ export function AuthLogTable({ rows, showAgent = true }: { rows: AuthLogRow[]; s
                 <Mono muted>{r.page ?? "—"}</Mono>
               </td>
               <td style={tableCell}>
-                <Mono muted>{r.error ?? r.decision ?? "—"}</Mono>
+                <Mono muted>{r.error ?? "—"}</Mono>
               </td>
             </tr>
           ))}

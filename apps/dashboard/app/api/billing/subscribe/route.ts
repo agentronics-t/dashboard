@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   try {
     return json(
       200,
-      await startCheckout(ctx, ctx.tenantId, ctx.userId, { plan: body.plan, cycle: body.cycle, currency: body.currency })
+      await startCheckout(ctx, ctx.tenantId, ctx.userId, { plan: body.plan, cycle: body.cycle })
     );
   } catch (e) {
     return errorResponse(e);

@@ -88,10 +88,11 @@ export async function startCheckout(
   deps: { db: Db; rzp: RazorpayClient; config: BillingConfig },
   tenantId: string,
   userId: string,
-  input: { plan: unknown; cycle: unknown; currency: unknown }
+  input: { plan: unknown; cycle: unknown; currency?: unknown }
 ): Promise<{ subscriptionId: string; keyId: string; amount: number; currency: Currency; planName: string }> {
   const { db, rzp, config } = deps;
-  const { plan, cycle, currency } = input;
+  const { plan, cycle } = input;
+  const currency = input.currency ?? "USD"; // USD is the only currency
   if (!isPaidTier(plan) || !isCycle(cycle) || !isCurrency(currency)) {
     throw new BillingError(400, "invalid_plan");
   }
@@ -103,7 +104,7 @@ export async function startCheckout(
   if (!razorpayPlanId) throw new BillingError(503, "plan_not_configured", planEnvKey(plan, cycle, currency));
   const checkout = () => ({
     keyId: config.keyId,
-    amount: TIERS[plan].prices![currency][cycle],
+    amount: TIERS[plan].prices![cycle],
     currency,
     planName: TIERS[plan].name
   });
@@ -273,10 +274,9 @@ export function billingConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Bill
   if (!keyId || !keySecret || !webhookSecret) return null;
   const planIds: Record<string, string | undefined> = {};
   for (const tier of ["pro", "business"] as const)
-    for (const cycle of ["monthly", "yearly"] as const)
-      for (const currency of ["USD", "INR"] as const) {
-        const k = planEnvKey(tier, cycle, currency);
-        planIds[k] = env[k];
-      }
+    for (const cycle of ["monthly", "yearly"] as const) {
+      const k = planEnvKey(tier, cycle, "USD"); // USD is the only currency
+      planIds[k] = env[k];
+    }
   return { keyId, keySecret, webhookSecret, planIds };
 }

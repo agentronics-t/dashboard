@@ -1,6 +1,6 @@
 import { Badge, Card, CardTitle, PageHeader } from "@/components/ui";
 import { CancelPlanButton, PlanPicker } from "@/components/billing/PlanPicker";
-import { TIERS, isCurrency, isCycle, isPaidTier } from "@/lib/billing/plans";
+import { TIERS, isCycle, isPaidTier } from "@/lib/billing/plans";
 import { billingConfigFromEnv, currentPlan } from "@/lib/billing/service";
 import { getMonthlyActiveAgents } from "@/lib/queries";
 import { db, getTenantId } from "@/lib/tenant";
@@ -48,7 +48,7 @@ export default async function BillingPage({
               ? "Free forever — upgrade when agents become a real share of your traffic."
               : plan.cancelAtCycleEnd
                 ? `Ends on ${periodEnd ?? "the last day of this period"}; you'll move to Free after that.`
-                : `Billed ${plan.cycle} in ${plan.currency}. ${periodEnd ? `Renews ${periodEnd}.` : ""}`}
+                : `Billed ${plan.cycle} in USD. ${periodEnd ? `Renews ${periodEnd}.` : ""}`}
           </p>
           {plan.tier !== "free" && !plan.cancelAtCycleEnd && <CancelPlanButton />}
         </Card>
@@ -93,8 +93,7 @@ export default async function BillingPage({
           enabled={enabled}
           initial={{
             plan: isPaidTier(sp.plan) ? sp.plan : null,
-            cycle: isCycle(sp.cycle) ? sp.cycle : "monthly",
-            currency: isCurrency(sp.currency) ? sp.currency : "USD"
+            cycle: isCycle(sp.cycle) ? sp.cycle : "monthly"
           }}
         />
         <p style={{ margin: "14px 0 0", fontSize: 12, color: "var(--content-muted)" }}>

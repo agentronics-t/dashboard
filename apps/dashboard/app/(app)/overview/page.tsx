@@ -21,7 +21,7 @@ export default async function OverviewPage() {
     currentPlan(db(), tenantId)
   ]);
   const limit = TIERS[plan.tier].maa;
-  const total = summary.verified + summary.unverified + summary.blocked;
+  const total = summary.verified + summary.unverified;
   const verifiedPct = total ? Math.round((summary.verified / total) * 100) : 0;
 
   const steps = [
@@ -73,8 +73,8 @@ export default async function OverviewPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 16 }}>
         <Kpi label="Monthly active agents" value={fmt(maa)} sub={limit ? `of ${fmt(limit)} on ${TIERS[plan.tier].name}` : TIERS[plan.tier].name} />
         <Kpi label="Verified sign-ins" value={fmt(summary.verified)} sub={`${verifiedPct}% of agent traffic · 7d`} />
-        <Kpi label="Unverified" value={fmt(summary.unverified)} sub="agent claims without a valid credential · 7d" />
-        <Kpi label="Blocked" value={fmt(summary.blocked)} sub="by your access rules · 7d" />
+        <Kpi label="Unverified" value={fmt(summary.unverified)} sub="no valid credential — browsed as normal · 7d" />
+        <Kpi label="Methods in use" value={fmt(summary.byMethod.filter((m) => m.verified > 0).length)} sub="with a verified sign-in · 7d" />
       </div>
 
       {total === 0 ? (

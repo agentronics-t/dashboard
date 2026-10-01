@@ -23,7 +23,10 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   if (!agent) notFound();
 
   const methods = [...new Set(logs.map((l) => l.method).filter(Boolean))] as string[];
-  const blockSnippet = `rules: { block: [${JSON.stringify(identity)}] }`;
+  const routeSnippet = `const agent = readAgentHeaders(await headers())
+if (agent.id === ${JSON.stringify(identity)}) {
+  // this agent, verified — tailor the response
+}`;
 
   return (
     <>
@@ -35,9 +38,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
       <PageHeader title={agent.name} subtitle={agent.verified ? "Verified agent" : "Unverified agent"} action={<VerifiedBadge verified={agent.verified} />} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 16 }}>
-        <Kpi label="Sign-ins" value={fmt(agent.requests - agent.failures - agent.blocked)} sub="30d" />
-        <Kpi label="Failed" value={fmt(agent.failures)} sub="30d" />
-        <Kpi label="Blocked" value={fmt(agent.blocked)} sub="30d" />
+        <Kpi label="Sign-ins" value={fmt(agent.requests - agent.failures)} sub="30d" />
+        <Kpi label="Failed" value={fmt(agent.failures)} sub="30d · still browsed as normal" />
         <Kpi label="Last seen" value={ago(agent.lastSeen)} sub={`first ${agent.firstSeen.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`} />
       </div>
 
@@ -58,17 +60,17 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
           </dl>
         </Card>
         <Card>
-          <CardTitle>Block this agent</CardTitle>
+          <CardTitle>Use this identity in your app</CardTitle>
           <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--content-secondary)", lineHeight: 1.55 }}>
-            Add it to your middleware&apos;s block list (Pro and above). Blocking applies even when the agent verifies.
+            When this agent verifies, your routes receive its id in the <code>x-agentronics-*</code> headers. Agentronics never blocks — what you do with the identity is up to your app.
           </p>
           <pre style={{ margin: 0, padding: 12, borderRadius: "var(--radius-md)", background: "var(--surface-raised)", fontSize: 12, overflowX: "auto" }}>
-            <code>{blockSnippet}</code>
+            <code>{routeSnippet}</code>
           </pre>
           <p style={{ margin: "10px 0 0", fontSize: 12 }}>
-            <Link href="/configure/access-rules" style={{ color: "var(--brand)" }}>
-              Open access rules →
-            </Link>
+            <a href="https://agentronics.dev/docs/frameworks/nextjs" style={{ color: "var(--brand)" }}>
+              Reading the verified agent →
+            </a>
           </p>
         </Card>
       </div>

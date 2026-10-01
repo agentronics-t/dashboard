@@ -25,7 +25,7 @@ const REASONS: { code: string; meaning: string; fix: string }[] = [
   { code: "crawler:client_ip_unknown", meaning: "No trusted client-IP header.", fix: "Set crawlers.clientIp to your platform's client-IP header." },
   { code: "crawler:dns_unavailable_in_runtime", meaning: "Running on an edge runtime without DNS.", fix: "Set runtime: 'nodejs' on the middleware." },
   { code: "crawler:no_rdns_method_for_vendor", meaning: "This crawler's operator doesn't publish reverse-DNS verification.", fix: "Expected for GPTBot, ClaudeBot, PerplexityBot — they can verify with Web Bot Auth." },
-  { code: "agent_claim_without_credentials", meaning: "It looks like an agent but presented nothing to verify.", fix: "Give the agent a credential, or block unverified agents." }
+  { code: "agent_claim_without_credentials", meaning: "It looks like an agent but presented nothing to verify.", fix: "Expected for agents without credentials — they still browse as normal. Issue an API key to agents you run." }
 ];
 
 export function ReasonLookup() {

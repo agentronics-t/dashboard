@@ -20,7 +20,6 @@ const SECTIONS: { label: string | null; items: { href: string; label: string; ic
     label: "Configure",
     items: [
       { href: "/configure/authentication", label: "Authentication", icon: "key" },
-      { href: "/configure/access-rules", label: "Access rules", icon: "shield" },
       { href: "/configure/api-keys", label: "API keys", icon: "code" }
     ]
   }

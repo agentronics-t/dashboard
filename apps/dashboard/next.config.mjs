@@ -28,7 +28,12 @@ const nextConfig = {
     // (app/_hidden/README.md) → console home.
     const retired = ["/forecast", "/insights", "/plugins", "/chat", "/detect", "/authz", "/webmcp-tools", "/knaph", "/analytics"]
       .map((source) => ({ source, destination: "/", permanent: false }));
-    return [...retired, { source: "/auth", destination: "/agents", permanent: false }];
+    return [
+      ...retired,
+      { source: "/auth", destination: "/agents", permanent: false },
+      // Access rules are gone — Agentronics authenticates, it never blocks.
+      { source: "/configure/access-rules", destination: "/configure/authentication", permanent: false }
+    ];
   }
 };
 

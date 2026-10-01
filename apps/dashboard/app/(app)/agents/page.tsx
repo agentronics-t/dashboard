@@ -68,7 +68,6 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
                   <th style={tableHead}>Status</th>
                   <th style={{ ...tableHead, textAlign: "right" }}>Sign-ins</th>
                   <th style={{ ...tableHead, textAlign: "right" }}>Failed</th>
-                  <th style={{ ...tableHead, textAlign: "right" }}>Blocked</th>
                   <th style={tableHead}>First seen</th>
                   <th style={{ ...tableHead, textAlign: "right" }}>Last seen</th>
                 </tr>
@@ -93,9 +92,8 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
                     <td style={tableCell}>
                       <VerifiedBadge verified={a.verified} />
                     </td>
-                    <td style={{ ...tableCell, textAlign: "right" }}>{fmt(a.requests - a.failures - a.blocked)}</td>
+                    <td style={{ ...tableCell, textAlign: "right" }}>{fmt(a.requests - a.failures)}</td>
                     <td style={{ ...tableCell, textAlign: "right", color: a.failures ? "var(--warning)" : "var(--content-muted)" }}>{fmt(a.failures)}</td>
-                    <td style={{ ...tableCell, textAlign: "right", color: a.blocked ? "var(--danger)" : "var(--content-muted)" }}>{fmt(a.blocked)}</td>
                     <td style={{ ...tableCell, color: "var(--content-muted)" }}>{a.firstSeen.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
                     <td style={{ ...tableCell, textAlign: "right", color: "var(--content-muted)" }}>{ago(a.lastSeen)}</td>
                   </tr>

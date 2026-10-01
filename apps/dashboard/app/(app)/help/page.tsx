@@ -10,7 +10,7 @@ const DOCS = "https://agentronics.dev/docs";
 const GUIDES = [
   { title: "Quickstart", body: "Verify your first agent in five minutes.", href: `${DOCS}/getting-started` },
   { title: "Authentication methods", body: "Web Bot Auth, API keys, OAuth2, crawlers, SSO, SPIFFE, mTLS.", href: `${DOCS}/auth/overview` },
-  { title: "Access rules", body: "Block unverified agents, keep allow and block lists.", href: `${DOCS}/access-rules` },
+  { title: "How it works", body: "Authenticate, pass through, record — Agentronics never blocks.", href: `${DOCS}/concepts/how-it-works` },
   { title: "Stream auth logs", body: "Send sign-ins from your middleware to this console.", href: `${DOCS}/guides/connect-to-dashboard` },
   { title: "Next.js", body: "Middleware, Clerk composition, route handlers.", href: `${DOCS}/frameworks/nextjs` },
   { title: "Server API", body: "Every option, result field and header.", href: `${DOCS}/reference/server-api` }
@@ -26,8 +26,8 @@ const FAQ = [
     a: "Look at the reason in Auth logs. crawler:client_ip_unknown or crawler:dns_unavailable_in_runtime are setup issues (client-IP header, Node.js runtime). crawler:no_rdns_method_for_vendor is expected for GPTBot, ClaudeBot and PerplexityBot."
   },
   {
-    q: "Will blocking unverified agents affect my human visitors?",
-    a: "No. Requests with no agent signals are 'none' and always pass. Use the impact preview on Access rules to see exactly which agents a rule would have blocked last week."
+    q: "Does Agentronics block agents or affect my human visitors?",
+    a: "No. Agentronics only authenticates — it never blocks. Every request reaches your app: verified agents with their identity attached, unverified agents and humans exactly as before. Even if authentication fails internally, the request goes through."
   },
   {
     q: "What counts toward my monthly active agents?",

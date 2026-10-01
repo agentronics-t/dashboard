@@ -9,8 +9,7 @@ export const dynamic = "force-dynamic";
 const OUTCOMES: { label: string; value: OutcomeFilter }[] = [
   { label: "All", value: "all" },
   { label: "Verified", value: "success" },
-  { label: "Unverified", value: "error" },
-  { label: "Blocked", value: "blocked" }
+  { label: "Unverified", value: "error" }
 ];
 
 export default async function LogsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
