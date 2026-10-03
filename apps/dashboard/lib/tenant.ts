@@ -34,3 +34,16 @@ export async function getTenantId(): Promise<string> {
 
   return (tenant as { id: string } | undefined)?.id ?? DEMO_TENANT_ID;
 }
+
+/**
+ * Server-action guard for workspace-changing operations (keys, billing):
+ * requires a signed-in user and, inside an organization, the admin role.
+ * Without Clerk (local dev) the demo tenant is allowed.
+ */
+export async function requireWorkspaceAdmin(): Promise<void> {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) return;
+  const { auth } = await import("@clerk/nextjs/server");
+  const { userId, orgId, orgRole } = await auth();
+  if (!userId) throw new Error("unauthenticated");
+  if (orgId && orgRole !== "org:admin") throw new Error("Only organization admins can manage keys.");
+}

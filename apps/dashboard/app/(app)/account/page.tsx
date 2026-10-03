@@ -1,6 +1,6 @@
 import { AccountActions } from "@/components/AccountActions";
 import { Card, CardTitle, fmt, Kpi, PageHeader } from "@/components/ui";
-import { getConnectors, getUsage } from "@/lib/queries";
+import { getUsage } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +20,7 @@ async function getProfile() {
 
 export default async function AccountPage() {
   const tenantId = await getTenantId();
-  const [usage, profile, connectors] = await Promise.all([
-    getUsage(tenantId),
-    getProfile(),
-    getConnectors(tenantId)
-  ]);
-  const connected = connectors.filter((c) => c.secret_ref).length;
+  const [usage, profile] = await Promise.all([getUsage(tenantId), getProfile()]);
 
   return (
     <>
@@ -40,10 +35,9 @@ export default async function AccountPage() {
       </Card>
 
       <CardTitle>Plan &amp; usage</CardTitle>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 4, marginBottom: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginTop: 4, marginBottom: 18 }}>
         <Kpi label="Plan" value="Free trial" sub="upgrade in billing" />
         <Kpi label="Governed calls" value={fmt(usage.governedCalls)} sub={`period ${usage.period}`} />
-        <Kpi label="Connected plugins" value={String(connected)} sub={`${connectors.length} configured`} />
       </div>
 
       <Card>

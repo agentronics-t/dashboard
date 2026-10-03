@@ -1,39 +1,51 @@
 import { Card, CardTitle, PageHeader } from "@/components/ui";
-import { SdkKeys } from "@/components/SdkKeys";
-import { getSdkIngestKeys } from "@/lib/queries";
-import { getTenantId } from "@/lib/tenant";
-import { mintIngestKey, revokeIngestKey } from "./actions";
+import { Mono } from "@/components/console";
+import { TIERS } from "@/lib/billing/plans";
+import { currentPlan } from "@/lib/billing/service";
+import { db, getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
+const RETENTION: Record<string, string> = { free: "7 days", pro: "30 days", business: "90 days", enterprise: "Custom" };
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "10px 2px", borderBottom: "1px solid var(--border)", fontSize: 14 }}>
+      <span style={{ color: "var(--content-muted)", fontSize: 13 }}>{label}</span>
+      <span style={{ textAlign: "right" }}>{children}</span>
+    </div>
+  );
+}
+
 export default async function SettingsPage() {
   const tenantId = await getTenantId();
-  const keys = await getSdkIngestKeys(tenantId);
-
+  const plan = await currentPlan(db(), tenantId);
+  const apiBase = process.env.INTEL_API_URL?.replace(/\/$/, "");
   return (
     <>
-      <PageHeader title="Settings" subtitle="Workspace preferences" />
-
-      <div style={{ marginBottom: 18 }}>
-        <SdkKeys keys={keys} mint={mintIngestKey} revoke={revokeIngestKey} />
+      <PageHeader title="Settings" subtitle="Workspace details" />
+      <div style={{ display: "grid", gap: 16 }}>
+        <Card>
+          <CardTitle>Workspace</CardTitle>
+          <Row label="Workspace id">
+            <Mono>{tenantId}</Mono>
+          </Row>
+          <Row label="Plan">{TIERS[plan.tier].name}</Row>
+          <Row label="Auth log retention">{RETENTION[plan.tier]}</Row>
+        </Card>
+        <Card>
+          <CardTitle>Endpoints</CardTitle>
+          <Row label="Ingest URL (AGENTRONICS_INGEST_URL)">
+            <Mono>{apiBase ?? "not configured"}</Mono>
+          </Row>
+          <Row label="Events endpoint">
+            <Mono>{apiBase ? `${apiBase}/v1/sdk/events` : "—"}</Mono>
+          </Row>
+          <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--content-muted)" }}>
+            Keys live under <a href="/configure/api-keys" style={{ color: "var(--brand)" }}>Configure → API keys</a>.
+          </p>
+        </Card>
       </div>
-
-      <Card style={{ marginBottom: 18 }}>
-        <CardTitle>Data sources</CardTitle>
-        <p style={{ margin: 0, color: "var(--content-secondary)", fontSize: 14, lineHeight: 1.55 }}>
-          Connect and configure your data sources from the <strong>Plugins</strong> page.
-          Credentials are stored in Google Secret Manager and never touch the database.
-        </p>
-      </Card>
-
-      <Card>
-        <CardTitle>Import schedule</CardTitle>
-        <p style={{ margin: 0, color: "var(--content-secondary)", fontSize: 14, lineHeight: 1.55 }}>
-          Imports run automatically every day at <strong>02:00 IST</strong> per connected plugin,
-          and you can trigger one any time from <strong>Plugins → Run import now</strong>. A watchdog
-          fails jobs stuck longer than 2 hours and surfaces them in your insights feed.
-        </p>
-      </Card>
     </>
   );
 }

@@ -12,8 +12,10 @@ void initTracing("intel-api");
 const app = buildServer({
   db: createDb(env.DATABASE_URL),
   auth: clerkVerifier({ issuer: env.CLERK_ISSUER, jwksUrl: env.CLERK_JWKS_URL }),
-  tasks: new GcpTaskQueue(env),
-  secrets: new GcpSecretStore(env.GCP_PROJECT),
+  intelligence: env.ENABLE_INTELLIGENCE
+    ? { tasks: new GcpTaskQueue(env), secrets: new GcpSecretStore(env.GCP_PROJECT!) }
+    : undefined,
+  retentionDays: env.RETENTION_DAYS,
   internalAuth:
     env.SCHEDULER_SA && env.API_AUDIENCE
       ? googleOidcVerifier({

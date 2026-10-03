@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED — intelligence platform only. Not part of a normal deploy; use
+# infra/bring-up.sh. Kept for reference (see infra/README.md).
 # deploy-ml.sh — build, push, and create/update the intel-ml Cloud Run Job (STEP 6).
 #
 # Usage: ./infra/deploy-ml.sh <PROJECT_ID>

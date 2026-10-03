@@ -22,6 +22,20 @@
       "when": 1782214518435,
       "tag": "0002_redundant_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790790109137,
+      "tag": "0003_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790819843941,
+      "tag": "0004_agent_keys",
+      "breakpoints": true
     }
   ]
 }

@@ -29,6 +29,14 @@ for role in roles/run.developer roles/artifactregistry.writer roles/iam.serviceA
     --member "serviceAccount:${SA_EMAIL}" --role "${role}" --condition=None --quiet >/dev/null
 done
 
+echo "▶ Deployer may read the Neon URL (deploy.yml migrates before rollout) — this secret only"
+if gcloud secrets describe neon-database-url --project "${PROJECT_ID}" >/dev/null 2>&1; then
+  gcloud secrets add-iam-policy-binding neon-database-url --project "${PROJECT_ID}" \
+    --member "serviceAccount:${SA_EMAIL}" --role roles/secretmanager.secretAccessor --quiet >/dev/null
+else
+  echo "  ! secret neon-database-url not found — run infra/bring-up.sh first, then re-run this script"
+fi
+
 echo "▶ Workload Identity pool + provider"
 gcloud iam workload-identity-pools describe "${POOL}" --location global --project "${PROJECT_ID}" >/dev/null 2>&1 || \
   gcloud iam workload-identity-pools create "${POOL}" --location global \

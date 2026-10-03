@@ -1,7 +1,1 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="180" height="180" rx="40" fill="#1f1c4b"/>
-  <g transform="translate(0,4)">
-    <polygon points="85,38 108,38 125,72 94,80 63,132 29,132" fill="#5b4fd1" stroke="#5b4fd1" stroke-width="9" stroke-linejoin="round"/>
-    <polygon points="108,98 138,98 154,132 123,132" fill="#e58313" stroke="#e58313" stroke-width="9" stroke-linejoin="round"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180"><rect width="180" height="180" rx="40" fill="#1f1c4b"/><path fill="#5b4fd1" d="M91.85 40L99.33 40A10.37 10.37 0 0 1 108.61 45.73L123.25 75.02A2.59 2.59 0 0 1 120.93 78.77L101.79 78.77A10.37 10.37 0 0 0 92.94 83.76L61.77 135.02A10.37 10.37 0 0 1 52.91 140L29.83 140A2.59 2.59 0 0 1 27.61 136.06L82.99 44.98A10.37 10.37 0 0 1 91.85 40Z"/><path fill="#e58313" d="M107.52 99.36L128.05 99.36A10.37 10.37 0 0 1 137.33 105.09L152.91 136.25A2.59 2.59 0 0 1 150.59 140L130.05 140A10.37 10.37 0 0 1 120.78 134.27L105.2 103.11A2.59 2.59 0 0 1 107.52 99.36Z"/></svg>

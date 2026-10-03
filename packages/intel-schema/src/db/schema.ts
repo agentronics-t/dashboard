@@ -4,6 +4,7 @@
 
 import {
   bigint,
+  boolean,
   date,
   doublePrecision,
   index,
@@ -404,5 +405,73 @@ export const sdkInsights = pgTable(
   (t) => [
     uniqueIndex("sdk_insights_uq").on(t.tenantId, t.kind),
     index("sdk_insights_tenant_created_idx").on(t.tenantId, t.createdAt)
+  ]
+);
+
+// ---- billing (Razorpay Subscriptions) ---------------------------------------
+// One row per Razorpay subscription we create. Razorpay webhooks are the source
+// of truth for `status`; the tenant's plan is the newest row in
+// active/authenticated/pending (see landing_page/docs/plan-entitlements.md).
+
+export const billingSubscriptions = pgTable(
+  "billing_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    razorpaySubscriptionId: text("razorpay_subscription_id").notNull(),
+    razorpayPlanId: text("razorpay_plan_id").notNull(),
+    plan: text("plan").notNull(), // pro | business
+    cycle: text("cycle").notNull(), // monthly | yearly
+    currency: text("currency").notNull(), // always "USD" (pricing is USD only)
+    // created | authenticated | active | pending | halted | cancelled |
+    // completed | expired | paused
+    status: text("status").notNull(),
+    // created_at of the newest Razorpay event applied — webhooks can arrive
+    // out of order, so older events never overwrite newer state.
+    statusAt: timestamp("status_at", { withTimezone: true }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    cancelAtCycleEnd: boolean("cancel_at_cycle_end").notNull().default(false),
+    createdBy: text("created_by"), // Clerk user id
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex("billing_subscriptions_rzp_uq").on(t.razorpaySubscriptionId),
+    index("billing_subscriptions_tenant_idx").on(t.tenantId, t.createdAt)
+  ]
+);
+
+/** Processed Razorpay webhook events (x-razorpay-event-id) — idempotency. */
+export const billingEvents = pgTable("billing_events", {
+  eventId: text("event_id").primaryKey(),
+  event: text("event").notNull(),
+  razorpaySubscriptionId: text("razorpay_subscription_id"),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+// ---- agent API keys (agk_…) --------------------------------------------------
+// Minted in the console's Configure → API keys. Only the SHA-256 is stored;
+// the customer's middleware verifies keys with staticKeyVerifier() over the
+// AGENT_KEYS map the console exports (hash → identity).
+export const agentKeys = pgTable(
+  "agent_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
+    name: text("name").notNull(),
+    vendor: text("vendor"),
+    hashedKey: text("hashed_key").notNull(), // sha256 hex (matches hashAgentKey)
+    prefix: text("prefix").notNull(), // agk_ + first 6 chars, for display
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true })
+  },
+  (t) => [
+    uniqueIndex("agent_keys_hash_uq").on(t.hashedKey),
+    index("agent_keys_tenant_idx").on(t.tenantId)
   ]
 );

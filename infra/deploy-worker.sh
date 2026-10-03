@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED — intelligence platform only. Not part of a normal deploy; use
+# infra/bring-up.sh. Kept for reference (see infra/README.md).
 # deploy-worker.sh — build, push, deploy intel-worker to Cloud Run (STEP 5),
 # lock it to Cloud Tasks OIDC (intel-api SA), and point intel-api at it.
 #

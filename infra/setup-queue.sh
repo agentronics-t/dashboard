@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED — intelligence platform only. Not part of a normal deploy; use
+# infra/bring-up.sh. Kept for reference (see infra/README.md).
 # setup-queue.sh — create the import-jobs Cloud Tasks queue (STEP 5). Idempotent.
 #
 # Usage: ./infra/setup-queue.sh <PROJECT_ID>

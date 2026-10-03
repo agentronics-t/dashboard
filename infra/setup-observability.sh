@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED — intelligence platform only. Not part of a normal deploy; use
+# infra/bring-up.sh. Kept for reference (see infra/README.md).
 # setup-observability.sh — log-based metrics + alert policies (STEP 9). Idempotent.
 #
 # Usage: ./infra/setup-observability.sh <PROJECT_ID> <ALERT_EMAIL>
