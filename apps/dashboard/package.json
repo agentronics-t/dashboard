@@ -8,8 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types \"lib/**/*.test.ts\""
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@agentronics/intel-schema": "workspace:*",
