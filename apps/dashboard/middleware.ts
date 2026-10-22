@@ -5,7 +5,8 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // (users arrive here already signed in from the landing page, or get the
 // dashboard-hosted sign-in as a fallback).
 const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-const isPublic = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
+// The Dodo webhook authenticates itself with a signature, not a session.
+const isPublic = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)", "/api/dodo/webhook"]);
 
 export default hasClerk
   ? clerkMiddleware(async (auth, req) => {

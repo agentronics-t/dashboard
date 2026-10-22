@@ -2,6 +2,7 @@ packages:
   - apps/intel-api
   - apps/intel-worker
   - apps/dashboard
+  - apps/agent-nick
   - packages/*
 onlyBuiltDependencies:
   - esbuild

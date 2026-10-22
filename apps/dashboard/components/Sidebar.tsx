@@ -5,6 +5,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logomark } from "./Logomark";
 
+// Agent Nick sits above the SDK pillars: it's where a site gets its WebMCP tools.
+const AGENT_NAV = [{ href: "/agent-nick", label: "Agent Nick", icon: "bot" }];
+
 // Agentronics is one product now — the SDK and the dashboard it feeds.
 // Fed by events streamed to the intel-api SDK ingest endpoint; each page
 // shows an empty state until the customer connects an ingest key.
@@ -27,6 +30,7 @@ const ICONS: Record<string, React.ReactElement> = {
   grid: <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />,
   trend: <path d="M3 17l5-5 4 3 8-9" />,
   spark: <path d="M12 3l2.2 6.3L20 11l-5.8 1.7L12 19l-2.2-6.3L4 11l5.8-1.7z" />,
+  bot: <path d="M12 3v3M8 7h8a4 4 0 014 4v4a4 4 0 01-4 4H8a4 4 0 01-4-4v-4a4 4 0 014-4zM9.5 12.5v1M14.5 12.5v1M2 12v3M22 12v3" />,
   plug: <path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 01-10 0zM12 16v6" />,
   chat: <path d="M4 5h16v11H8l-4 4z" />,
   radar: <path d="M12 12l6-4M12 21a9 9 0 109-9M12 12a4 4 0 104 4" />,
@@ -57,6 +61,8 @@ export function Sidebar() {
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains("dark"));
+    // Phones: start collapsed so the page gets the width.
+    if (window.matchMedia("(max-width: 760px)").matches) setOpen(false);
   }, []);
 
   const toggleTheme = () => {
@@ -111,6 +117,8 @@ export function Sidebar() {
       </div>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 22, flex: 1, minHeight: 0, overflowY: "auto" }}>
+        {AGENT_NAV.map((n) => <NavBtn key={n.href} {...n} />)}
+        <div style={{ borderTop: "1px solid var(--border)", margin: "8px 4px" }} />
         {SDK_NAV.map((n) => <NavBtn key={n.href} {...n} />)}
       </nav>
 

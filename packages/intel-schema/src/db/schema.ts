@@ -475,3 +475,175 @@ export const agentKeys = pgTable(
     index("agent_keys_tenant_idx").on(t.tenantId)
   ]
 );
+
+// ---- Agent Nick (GitHub → WebMCP pipeline) -----------------------------------
+// The console's Agent Nick reads a customer's repo through our GitHub App,
+// proposes WebMCP tools, and opens a PR. The agent-nick service writes these
+// rows; the dashboard only reads them (plus the tenant's own review decision).
+
+/** One row per GitHub App installation a tenant linked (verified via the user's GitHub OAuth). */
+export const githubInstallations = pgTable(
+  "github_installations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    installationId: bigint("installation_id", { mode: "number" }).notNull(),
+    accountLogin: text("account_login").notNull(),
+    accountType: text("account_type").notNull(), // User | Organization
+    repositorySelection: text("repository_selection").notNull(), // all | selected
+    installedBy: text("installed_by"), // Clerk user id
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true })
+  },
+  (t) => [
+    uniqueIndex("github_installations_tenant_inst_uq").on(t.tenantId, t.installationId),
+    index("github_installations_inst_idx").on(t.installationId)
+  ]
+);
+
+/** A repo the tenant handed to Agent Nick — the "site" on the Agent overview. */
+export const agentNickSites = pgTable(
+  "agent_nick_sites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    installationId: bigint("installation_id", { mode: "number" }).notNull(),
+    repoId: bigint("repo_id", { mode: "number" }).notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    defaultBranch: text("default_branch").notNull(),
+    isPrivate: boolean("is_private").notNull().default(true),
+    homepage: text("homepage"),
+    framework: text("framework"),
+    // new | running | awaiting_review | pr_open | live | failed
+    status: text("status").notNull().default("new"),
+    lastRunId: uuid("last_run_id"),
+    liveSha: text("live_sha"), // merge commit that put the tools live
+    liveAt: timestamp("live_at", { withTimezone: true }),
+    liveTools: integer("live_tools").notNull().default(0),
+    // Latest push to the default branch (GitHub push webhook) — "last push" on the overview.
+    lastPushSha: text("last_push_sha"),
+    lastPushAt: timestamp("last_push_at", { withTimezone: true }),
+    lastPushBy: text("last_push_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex("agent_nick_sites_tenant_repo_uq").on(t.tenantId, t.repoId),
+    index("agent_nick_sites_repo_idx").on(t.repoId)
+  ]
+);
+
+/** One pipeline run (scan → propose → review → write → PR). LangGraph checkpoints live in their own schema. */
+export const agentNickRuns = pgTable(
+  "agent_nick_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    siteId: uuid("site_id")
+      .notNull()
+      .references(() => agentNickSites.id, { onDelete: "cascade" }),
+    // queued | running | awaiting_review | pr_open | merged | closed | failed | cancelled
+    status: text("status").notNull().default("queued"),
+    step: text("step").notNull().default("queued"), // current pipeline step id
+    baseSha: text("base_sha"),
+    framework: text("framework"),
+    pagesFound: integer("pages_found").notNull().default(0),
+    actionsFound: integer("actions_found").notNull().default(0),
+    toolsProposed: integer("tools_proposed").notNull().default(0),
+    toolsApproved: integer("tools_approved").notNull().default(0),
+    filesChanged: integer("files_changed").notNull().default(0),
+    additions: integer("additions").notNull().default(0),
+    deletions: integer("deletions").notNull().default(0),
+    branch: text("branch"),
+    prNumber: integer("pr_number"),
+    prUrl: text("pr_url"),
+    headSha: text("head_sha"),
+    ciStatus: text("ci_status"), // pending | success | failure | none
+    fixAttempts: integer("fix_attempts").notNull().default(0),
+    decision: jsonb("decision"), // the tenant's review: approved tools + auth + plan
+    tokensIn: integer("tokens_in").notNull().default(0),
+    tokensOut: integer("tokens_out").notNull().default(0),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    error: text("error"),
+    createdBy: text("created_by"), // Clerk user id
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    mergedAt: timestamp("merged_at", { withTimezone: true })
+  },
+  (t) => [
+    index("agent_nick_runs_site_idx").on(t.siteId, t.createdAt),
+    index("agent_nick_runs_tenant_idx").on(t.tenantId, t.createdAt),
+    index("agent_nick_runs_pr_idx").on(t.prNumber)
+  ]
+);
+
+/** Append-only step log — drives the live pipeline view. */
+export const agentNickEvents = pgTable(
+  "agent_nick_events",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentNickRuns.id, { onDelete: "cascade" }),
+    step: text("step").notNull(),
+    kind: text("kind").notNull(), // start | done | fail | info | wait
+    message: text("message").notNull(),
+    data: jsonb("data"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [index("agent_nick_events_run_idx").on(t.runId, t.id)]
+);
+
+/** Tools a run proposed; `approved` is set from the review, `filePath` once written. */
+export const agentNickTools = pgTable(
+  "agent_nick_tools",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentNickRuns.id, { onDelete: "cascade" }),
+    siteId: uuid("site_id")
+      .notNull()
+      .references(() => agentNickSites.id, { onDelete: "cascade" }),
+    page: text("page").notNull(), // route, e.g. /checkout
+    name: text("name").notNull(),
+    kind: text("kind").notNull(), // form (declarative) | script (registerTool)
+    description: text("description").notNull(),
+    inputSchema: jsonb("input_schema").notNull(),
+    risk: text("risk").notNull(), // read | write | payment | destructive
+    readOnly: boolean("read_only").notNull().default(false),
+    consequential: boolean("consequential").notNull().default(false),
+    auth: text("auth").notNull().default("public"), // public | signed_in | scoped
+    source: jsonb("source").notNull(), // where in the code the action lives
+    approved: boolean("approved").notNull().default(true),
+    filePath: text("file_path"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex("agent_nick_tools_run_name_uq").on(t.runId, t.name),
+    index("agent_nick_tools_site_idx").on(t.siteId)
+  ]
+);
+
+/** The workspace's paid plan (Dodo Payments subscription). One row per tenant. */
+export const workspacePlans = pgTable("workspace_plans", {
+  tenantId: uuid("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  plan: text("plan").notNull(), // lite | starter | team | business
+  // active | on_hold | cancelled | failed | expired | pending
+  status: text("status").notNull(),
+  dodoSubscriptionId: text("dodo_subscription_id"),
+  dodoCustomerId: text("dodo_customer_id"),
+  checkoutSessionId: text("checkout_session_id"), // pending checkout, confirmed on return/webhook
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
