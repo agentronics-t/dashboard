@@ -9,6 +9,7 @@ import type { GitHub } from "../github/client.ts";
 import { systemPrompt } from "../knowledge/index.ts";
 import type { Llm } from "../llm/gemini.ts";
 import type { Pipeline } from "./graph.ts";
+import { tenantPlan } from "../plan.ts";
 import { RunReporter } from "./reporter.ts";
 import type { FileChange } from "./types.ts";
 import { validateChanges } from "./validate.ts";
@@ -133,7 +134,10 @@ export async function handleWebhook(deps: FollowupDeps, event: string, p: Record
     if (status === "success") await r.done("ci", `All ${ours.length} checks passed`);
     if (status === "failure") {
       await r.info("ci", `${failedRuns.length} check${failedRuns.length === 1 ? "" : "s"} failed: ${failedRuns.map((c) => c.name).join(", ")}`);
-      if (hit.run.fixAttempts < MAX_FIX_ATTEMPTS) deps.dispatchFix(hit.run.id);
+      const plan = await tenantPlan(db, hit.run.tenantId);
+      if (!plan.limits.agentNickAutoCiFix) {
+        await r.info("ci", `Automatic CI fixes are included from the Starter plan — fix it on the PR, or upgrade.`);
+      } else if (hit.run.fixAttempts < MAX_FIX_ATTEMPTS) deps.dispatchFix(hit.run.id);
       else {
         await r.fail("ci", "CI is still failing after an automatic fix. Open the PR to see the errors.");
         await r.update({ status: "pr_open", finishedAt: null });

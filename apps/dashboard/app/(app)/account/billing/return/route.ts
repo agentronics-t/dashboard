@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { isPaidPlanId } from "@agentronics/intel-schema";
 import { schema } from "@agentronics/intel-schema/db";
-import { dodo, isPlanId, planStatus } from "@/lib/billing";
+import { dodo, planStatus } from "@/lib/billing";
 import { db, getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -9,25 +10,26 @@ export const dynamic = "force-dynamic";
 /**
  * Dodo sends the buyer back here. The query string is only a hint: we look up
  * the payment and subscription with Dodo, and only accept a checkout this
- * workspace started, before turning the plan on.
+ * workspace started, before turning the plan on. The webhook confirms it too.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const runId = url.searchParams.get("run");
-  const dest = (q: string) => NextResponse.redirect(`${url.origin}${runId && /^[0-9a-f-]{36}$/.test(runId) ? `/agent-nick/runs/${runId}` : "/agent-nick"}?${q}`);
+  const nextParam = url.searchParams.get("next");
+  const next = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/account";
+  const dest = (state: string) => NextResponse.redirect(`${url.origin}${next}${next.includes("?") ? "&" : "?"}plan=${state}`);
 
   const client = dodo();
   const tenantId = await getTenantId();
   const [row] = await db().select().from(schema.workspacePlans).where(eq(schema.workspacePlans.tenantId, tenantId));
   const sessionId = url.searchParams.get("session_id") ?? row?.checkoutSessionId ?? null;
-  if (!client || !row || !sessionId || sessionId !== row.checkoutSessionId) return dest("plan=unknown");
+  if (!client || !row || !sessionId || sessionId !== row.checkoutSessionId) return dest("unknown");
 
   try {
     const session = await client.checkoutSessions.retrieve(sessionId);
-    if (session.payment_status !== "succeeded" || !session.payment_id) return dest(`plan=${session.payment_status ?? "pending"}`);
+    if (session.payment_status !== "succeeded" || !session.payment_id) return dest(session.payment_status ?? "pending");
     const payment = await client.payments.retrieve(session.payment_id);
     const plan = payment.metadata?.plan;
-    if (payment.metadata?.tenant_id !== tenantId || !isPlanId(plan)) return dest("plan=unknown");
+    if (payment.metadata?.tenant_id !== tenantId || !isPaidPlanId(plan)) return dest("unknown");
     const subscriptionId = payment.subscription_ids?.[0] ?? null;
     const sub = subscriptionId ? await client.subscriptions.retrieve(subscriptionId) : null;
     await db()
@@ -42,8 +44,8 @@ export async function GET(req: Request) {
         updatedAt: new Date()
       })
       .where(eq(schema.workspacePlans.tenantId, tenantId));
-    return dest("plan=active");
+    return dest("active");
   } catch {
-    return dest("plan=unknown");
+    return dest("unknown");
   }
 }

@@ -42,8 +42,6 @@ const envSchema = z.object({
   EXECUTOR: z.enum(["inline", "job"]).default("inline"),
   JOB_NAME: z.string().default("agent-nick-job"),
 
-  // Reviews may only be approved when the workspace has an active paid plan.
-  REQUIRE_PLAN: bool("true"),
   // Do everything except write to GitHub (branch/commit/PR) — for local testing.
   DRY_RUN: bool("false"),
   // DRY_RUN only: read repos with this token ("" = anonymous, public repos)

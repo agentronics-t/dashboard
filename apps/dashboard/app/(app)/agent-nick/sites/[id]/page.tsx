@@ -5,6 +5,7 @@ import { statusBadgeProps } from "@/components/agent-nick/Pipeline";
 import { RerunButton } from "@/components/agent-nick/RunActions";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { getSite, timeAgo } from "@/lib/agentNick";
+import { getWorkspacePlan } from "@/lib/billing";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ const RISK_LABEL: Record<string, string> = { read: "read-only", write: "changes 
 export default async function SitePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
-  const data = await getSite(await getTenantId(), id);
+  const tenantId = await getTenantId();
+  const [data, { spec: plan }] = await Promise.all([getSite(tenantId, id), getWorkspacePlan(tenantId)]);
   if (!data) notFound();
   const { site, runs, liveRun, liveTools } = data;
   const current = runs[0] ?? null;
@@ -22,6 +24,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
   const status = busy ? current.status : site.status;
   const b = statusBadgeProps(status);
   const changedSince = !!(site.liveAt && site.lastPushAt && site.lastPushAt > site.liveAt);
+  const alerts = plan.limits.agentNickRescanAlerts;
 
   return (
     <>
@@ -42,15 +45,25 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
                 {current.status === "awaiting_review" ? "Review tools" : current.status === "pr_open" ? "Open PR" : "Watch run"}
               </Link>
             ) : (
-              <RerunButton siteId={site.id} label={site.liveSha ? "Re-scan & update tools" : "Run Agent Nick"} primary={changedSince || !site.liveSha} />
+              <RerunButton siteId={site.id} label={site.liveSha ? "Re-scan & update tools" : "Run Agent Nick"} primary={(changedSince && alerts) || !site.liveSha} />
             )}
           </div>
         }
       />
 
-      {changedSince && (
+      {changedSince && alerts && (
         <Card style={{ marginBottom: 18, borderColor: "var(--warning)", background: "var(--warning-bg)" }}>
           Your code changed {timeAgo(site.lastPushAt)} — after the tools went live. Re-scan to pick up new pages and actions.
+        </Card>
+      )}
+      {site.liveSha && !alerts && (
+        <Card style={{ marginBottom: 18 }}>
+          <span className="ag-muted">
+            Get told when your code changes after the tools go live, with one-click re-scans — included from the Starter plan.{" "}
+            <Link className="ag-link" href="/account">
+              Upgrade
+            </Link>
+          </span>
         </Card>
       )}
 

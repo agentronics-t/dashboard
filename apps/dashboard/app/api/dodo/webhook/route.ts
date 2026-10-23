@@ -1,6 +1,7 @@
 import { eq, or } from "drizzle-orm";
 import { schema } from "@agentronics/intel-schema/db";
-import { dodo, isPlanId, planFromProduct, planStatus } from "@/lib/billing";
+import { isPaidPlanId } from "@agentronics/intel-schema";
+import { dodo, planFromProduct, planStatus } from "@/lib/billing";
 import { db } from "@/lib/tenant";
 
 export const runtime = "nodejs";
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
     customer?: { customer_id?: string };
   };
   const tenantId = sub.metadata?.tenant_id;
-  const plan = planFromProduct(sub.product_id) ?? (isPlanId(sub.metadata?.plan) ? sub.metadata.plan : null);
+  const plan = planFromProduct(sub.product_id) ?? (isPaidPlanId(sub.metadata?.plan) ? sub.metadata.plan : null);
   const values = {
     status: planStatus(sub.status),
     dodoSubscriptionId: sub.subscription_id,

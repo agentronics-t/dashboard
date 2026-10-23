@@ -1,13 +1,19 @@
 import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   sdkTraceBatch,
   sdkToolsPush,
   sdkMemoryPush,
   type SdkEventType,
-  type SdkEventOutcome
+  type SdkEventOutcome,
+  DEFAULT_CONTRACT_RETENTION_DAYS,
+  PLANS,
+  PLAN_IDS,
+  monthStart,
+  resolvePlan,
+  type PlanId
 } from "@agentronics/intel-schema";
 import { schema, type Db } from "@agentronics/intel-schema/db";
 import {
@@ -42,14 +48,38 @@ export interface ServerDeps {
    * provided — i.e. ENABLE_INTELLIGENCE=true. Off by default.
    */
   intelligence?: IntelligenceDeps | undefined;
-  /** Raw sdk_events older than this are pruned. Default 90. */
-  retentionDays?: number;
   /** Clock seam for tests. */
   now?: () => Date;
 }
 
 export function buildServer(deps: ServerDeps) {
-  const { db, auth, internalAuth, intelligence, retentionDays = 90, now = () => new Date() } = deps;
+  const { db, auth, internalAuth, intelligence, now = () => new Date() } = deps;
+
+  // Plan + month-to-date usage per tenant, cached briefly so busy sites don't
+  // add two queries to every ingest batch.
+  const quotaCache = new Map<string, { at: number; plan: PlanId; used: number }>();
+  async function monthlyQuota(tenantId: string) {
+    let hit = quotaCache.get(tenantId);
+    if (!hit || Date.now() - hit.at > 30_000) {
+      const [row] = await db.select().from(schema.workspacePlans).where(eq(schema.workspacePlans.tenantId, tenantId));
+      const [usage] = await db
+        .select({ n: sql<number>`coalesce(sum(${schema.sdkEventDaily.count}), 0)::bigint` })
+        .from(schema.sdkEventDaily)
+        .where(and(eq(schema.sdkEventDaily.tenantId, tenantId), gte(schema.sdkEventDaily.date, monthStart(now()).date)));
+      hit = { at: Date.now(), plan: resolvePlan(row, now()), used: Number(usage?.n ?? 0) };
+      quotaCache.set(tenantId, hit);
+    }
+    const limit = PLANS[hit.plan].limits.requestsPerMonth;
+    const room = limit === null ? null : Math.max(0, limit - hit.used);
+    return {
+      room,
+      /** Count what we're about to store so the cache stays close between refreshes. */
+      info: { plan: hit.plan, limit, used: hit.used },
+      take: (n: number) => {
+        if (hit) hit.used += n;
+      }
+    };
+  }
 
   const app = Fastify({
     logger: {
@@ -185,15 +215,30 @@ export function buildServer(deps: ServerDeps) {
     // rollups that power the console charts are kept. (Moved here from
     // intel-worker so a normal deploy is this one service.)
     api.post("/v1/maintenance/prune", async (req) => {
-      const cutoff = new Date(now().getTime() - retentionDays * 24 * 60 * 60 * 1000);
-      const events = await db
-        .delete(schema.sdkEvents)
-        .where(lt(schema.sdkEvents.ingestedAt, cutoff))
-        .returning({ id: schema.sdkEvents.id });
+      // Each workspace keeps raw events for its plan's retention window.
+      const at = now();
+      const days = (id: PlanId) => PLANS[id].limits.retentionDays ?? DEFAULT_CONTRACT_RETENTION_DAYS;
+      const pruned = await db.execute<{ id: string }>(sql`
+        DELETE FROM sdk_events e
+        USING tenants t
+        LEFT JOIN workspace_plans wp ON wp.tenant_id = t.id
+        WHERE e.tenant_id = t.id
+          AND e.ingested_at < ${at.toISOString()}::timestamptz - make_interval(days => (
+            CASE
+              WHEN wp.status = 'active' AND (wp.current_period_end IS NULL OR wp.current_period_end > ${at.toISOString()}::timestamptz)
+              THEN CASE wp.plan
+                WHEN 'starter' THEN ${days("starter")}
+                WHEN 'pro' THEN ${days("pro")}
+                WHEN 'enterprise' THEN ${days("enterprise")}
+                ELSE ${days("free")}
+              END
+              ELSE ${days("free")}
+            END)::int)
+        RETURNING e.id`);
       const result = {
-        cutoff: cutoff.toISOString(),
-        retention_days: retentionDays,
-        pruned_events: events.length
+        at: at.toISOString(),
+        retention_days: Object.fromEntries(PLAN_IDS.map((id) => [id, days(id)])),
+        pruned_events: pruned.length
       };
       req.log.info(result, "prune complete");
       return result;
@@ -207,8 +252,17 @@ export function buildServer(deps: ServerDeps) {
       const batch = sdkTraceBatch.parse(req.body);
       const tenantId = req.tenantId;
 
+      // 0) plan quota: events recorded per UTC month. Never blocks agents —
+      //    the SDK still gets a 202; events past the quota just aren't stored.
+      const quota = await monthlyQuota(tenantId);
+      const events = quota.room === null ? batch.events : batch.events.slice(0, quota.room);
+      const dropped = batch.events.length - events.length;
+      if (!events.length) {
+        return reply.status(202).send({ ok: true, accepted: 0, deduped: 0, dropped, quota: quota.info });
+      }
+
       // 1) raw append-only insert, idempotent on the SDK-provided event id
-      const rows = batch.events.map((e) => ({
+      const rows = events.map((e) => ({
         id: e.id,
         tenantId,
         siteId: e.siteId,
@@ -232,13 +286,14 @@ export function buildServer(deps: ServerDeps) {
         .onConflictDoNothing({ target: schema.sdkEvents.id })
         .returning({ id: schema.sdkEvents.id });
       const accepted = inserted.length;
+      quota.take(accepted);
 
       // 2) daily rollups — fold the batch, then UPSERT-increment per key
       const counts = new Map<
         string,
         { date: string; type: SdkEventType; agentClass: string; outcome: SdkEventOutcome; n: number }
       >();
-      for (const e of batch.events) {
+      for (const e of events) {
         const date = e.occurredAt.slice(0, 10);
         const agentClass = e.agent?.class ?? "none";
         const k = `${date}|${e.type}|${agentClass}|${e.outcome}`;
@@ -277,7 +332,7 @@ export function buildServer(deps: ServerDeps) {
       // authoritatively via POST /v1/sdk/tools and /v1/sdk/memory below.
       return reply
         .status(202)
-        .send({ ok: true, accepted, deduped: rows.length - accepted });
+        .send({ ok: true, accepted, deduped: rows.length - accepted, ...(dropped ? { dropped, quota: quota.info } : {}) });
     });
 
     // ---- SDK tool registry (authoritative; from the SDK's syncTools()) -------

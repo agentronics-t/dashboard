@@ -491,3 +491,68 @@ test("prune (internal) deletes sdk_events past the retention window, keeps recen
   assert.ok(!ids.includes(oldId), "old event pruned");
   assert.ok(ids.includes(newId), "recent event kept");
 });
+
+// ---- plans: monthly recording quota + per-plan retention -------------------
+
+async function tenantWithKey(clerkOrgId: string, plan?: string) {
+  const { generateIngestKey, monthStart } = await import("@agentronics/intel-schema");
+  const [t] = await db.insert(schema.tenants).values({ name: clerkOrgId, clerkOrgId }).returning({ id: schema.tenants.id });
+  const key = generateIngestKey();
+  await db.insert(schema.sdkIngestKeys).values({ tenantId: t!.id, hashedKey: key.hash, prefix: key.prefix, label: "plan-test" });
+  if (plan) await db.insert(schema.workspacePlans).values({ tenantId: t!.id, plan, status: "active" });
+  return { tenantId: t!.id, key: key.raw, month: monthStart().date };
+}
+
+test("free plan: events past the monthly quota are dropped, never rejected (202)", async () => {
+  const org = `org_quota_${randomUUID()}`;
+  const { tenantId, key, month } = await tenantWithKey(org);
+  try {
+    // 4,999 of the Free plan's 5,000 already recorded this month.
+    await db.insert(schema.sdkEventDaily).values({ tenantId, date: month, type: "agent.detected", agentClass: "crawler", outcome: "success", count: 4_999 });
+    const res = await app.inject({ method: "POST", url: "/v1/sdk/events", headers: { authorization: `Bearer ${key}` }, payload: sampleBatch() });
+    assert.equal(res.statusCode, 202);
+    assert.equal(res.json().accepted, 1);
+    assert.equal(res.json().dropped, 2);
+    assert.deepEqual(res.json().quota, { plan: "free", limit: 5_000, used: 4_999 });
+
+    const again = await app.inject({ method: "POST", url: "/v1/sdk/events", headers: { authorization: `Bearer ${key}` }, payload: sampleBatch() });
+    assert.equal(again.statusCode, 202);
+    assert.equal(again.json().accepted, 0);
+    assert.equal(again.json().dropped, 3);
+  } finally {
+    await db.delete(schema.tenants).where(eq(schema.tenants.clerkOrgId, org));
+  }
+});
+
+test("prune keeps each workspace's plan retention (free 7d, starter 30d)", async () => {
+  const freeOrg = `org_ret_free_${randomUUID()}`;
+  const starterOrg = `org_ret_starter_${randomUUID()}`;
+  const free = await tenantWithKey(freeOrg);
+  const starter = await tenantWithKey(starterOrg, "starter");
+  try {
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    const row = (tenantId: string) => ({
+      id: `evt_ret_${randomUUID()}`,
+      tenantId,
+      siteId: "ret-site",
+      sessionId: "sess_ret",
+      occurredAt: tenDaysAgo,
+      ingestedAt: tenDaysAgo,
+      type: "agent.detected" as const,
+      outcome: "success" as const
+    });
+    const [f, s] = [row(free.tenantId), row(starter.tenantId)];
+    await db.insert(schema.sdkEvents).values([f, s]);
+
+    const res = await app.inject({ method: "POST", url: "/v1/maintenance/prune", headers: { authorization: "Bearer internal-svc-token" } });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().retention_days.free, 7);
+
+    const left = (await db.select({ id: schema.sdkEvents.id }).from(schema.sdkEvents).where(eq(schema.sdkEvents.siteId, "ret-site"))).map((r) => r.id);
+    assert.ok(!left.includes(f.id), "10-day-old event pruned on Free");
+    assert.ok(left.includes(s.id), "10-day-old event kept on Starter");
+  } finally {
+    await db.delete(schema.tenants).where(eq(schema.tenants.clerkOrgId, freeOrg));
+    await db.delete(schema.tenants).where(eq(schema.tenants.clerkOrgId, starterOrg));
+  }
+});

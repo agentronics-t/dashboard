@@ -4,6 +4,8 @@ import { statusBadgeProps } from "@/components/agent-nick/Pipeline";
 import { RepoPicker } from "@/components/agent-nick/RepoPicker";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { agentNickConfigured, getInstallations, getSites, githubAppSlug, timeAgo } from "@/lib/agentNick";
+import { getPlanUsage, getWorkspacePlan } from "@/lib/billing";
+import { limitLabel } from "@agentronics/intel-schema";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -14,13 +16,15 @@ const ERRORS: Record<string, string> = {
   installation_not_yours: "That installation isn't visible to your GitHub account.",
   github_not_configured: "The GitHub App isn't configured on this console yet.",
   github_link_failed: "We couldn't link the GitHub installation. Try again.",
+  plan_limit: "That's over your plan's limit. Upgrade in Account to continue.",
   not_configured: "The Agent Nick service isn't connected to this console yet."
 };
 
 export default async function AgentNickPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const tenantId = await getTenantId();
-  const [installs, sites] = await Promise.all([getInstallations(tenantId), getSites(tenantId)]);
+  const [installs, sites, { spec: plan }, usage] = await Promise.all([getInstallations(tenantId), getSites(tenantId), getWorkspacePlan(tenantId), getPlanUsage(tenantId)]);
+  const runsLeft = plan.limits.agentNickRunsPerMonth === null ? null : Math.max(0, plan.limits.agentNickRunsPerMonth - usage.runs);
   const configured = agentNickConfigured() && !!githubAppSlug();
 
   const live = sites.filter((s) => s.site.status === "live" || s.site.liveSha);
@@ -53,6 +57,24 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
       {sp.error && (
         <Card style={{ marginBottom: 18, borderColor: "var(--danger)", background: "var(--danger-bg)" }}>{ERRORS[sp.error] ?? "Something went wrong. Try again."}</Card>
       )}
+
+      <div className="ag-muted" style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", fontSize: 13, margin: "-8px 0 16px" }}>
+        <span>
+          <strong style={{ color: "var(--content)" }}>{plan.name} plan</strong>
+        </span>
+        <span>
+          {usage.runs} of {limitLabel(plan.limits.agentNickRunsPerMonth)} runs this month
+        </span>
+        <span>
+          {usage.sites} of {limitLabel(plan.limits.agentNickSites)} site{plan.limits.agentNickSites === 1 ? "" : "s"}
+        </span>
+        <span>{limitLabel(plan.limits.agentNickToolsPerSite)} tools per site</span>
+        {plan.id !== "enterprise" && (
+          <Link className="ag-link" href="/account">
+            {runsLeft === 0 ? "Out of runs — upgrade" : "Upgrade"}
+          </Link>
+        )}
+      </div>
 
       {!installs.length ? (
         <Card style={{ padding: 24 }}>
@@ -110,7 +132,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
                     {sites.map(({ site, lastRun }) => {
                       const status = lastRun && ["queued", "running", "awaiting_review", "pr_open"].includes(lastRun.status) ? lastRun.status : site.status;
                       const b = statusBadgeProps(status);
-                      const changedSince = site.liveAt && site.lastPushAt && site.lastPushAt > site.liveAt;
+                      const changedSince = plan.limits.agentNickRescanAlerts && site.liveAt && site.lastPushAt && site.lastPushAt > site.liveAt;
                       return (
                         <tr key={site.id}>
                           <td>

@@ -12,8 +12,6 @@ const envSchema = z
     // Cloud Scheduler service-to-service auth (both required to enable)
     SCHEDULER_SA: z.string().email().optional(),
     API_AUDIENCE: z.string().url().optional(),
-    // Raw sdk_events older than this are pruned by POST /v1/maintenance/prune.
-    RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
     // Retired intelligence platform (connectors/imports/jobs). Off by default;
     // when on, the Cloud Tasks settings below become required.
     ENABLE_INTELLIGENCE: z

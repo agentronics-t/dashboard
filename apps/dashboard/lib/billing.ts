@@ -1,27 +1,27 @@
 // Workspace plans via Dodo Payments (merchant of record). Server only: the API
-// key and webhook key never reach the browser. Prices mirror agentronics.dev/pricing.
+// key and webhook key never reach the browser. Plans and limits come from
+// @agentronics/intel-schema (the same table agentronics.dev/pricing shows).
 import "server-only";
 import DodoPayments from "dodopayments";
+import { and, count, eq, gte, sql } from "drizzle-orm";
+import { PLANS, monthStart, resolvePlan, type PaidPlanId, type PlanSpec } from "@agentronics/intel-schema";
+import { schema } from "@agentronics/intel-schema/db";
+import { db } from "./tenant";
 
-export type PlanId = "lite" | "starter" | "team";
+export const PAID_PLANS: PlanSpec[] = [PLANS.starter, PLANS.pro];
 
-export const PLANS: { id: PlanId; name: string; price: number; tools: string; blurb: string }[] = [
-  { id: "lite", name: "Lite", price: 29, tools: "Up to 10 WebMCP tools", blurb: "Make one site agent-ready." },
-  { id: "starter", name: "Starter", price: 89, tools: "Unlimited WebMCP tools", blurb: "Serve and govern agents on your site." },
-  { id: "team", name: "Team", price: 199, tools: "Unlimited tools · 10 seats", blurb: "Full governance for growing agent traffic." }
-];
-
-/** Monthly subscription product ids created in the Dodo dashboard. */
-export function planProductId(plan: PlanId): string | null {
-  const ids: Record<PlanId, string | undefined> = {
-    lite: process.env.DODO_PRODUCT_LITE,
+/** Monthly subscription products created in the Dodo dashboard ($19 / $49). */
+export function planProductId(plan: PaidPlanId): string | null {
+  const ids: Record<PaidPlanId, string | undefined> = {
     starter: process.env.DODO_PRODUCT_STARTER,
-    team: process.env.DODO_PRODUCT_TEAM
+    pro: process.env.DODO_PRODUCT_PRO
   };
   return ids[plan] || null;
 }
 
-export const isPlanId = (v: unknown): v is PlanId => v === "lite" || v === "starter" || v === "team";
+export function planFromProduct(productId: string): PaidPlanId | null {
+  return (["starter", "pro"] as const).find((p) => planProductId(p) === productId) ?? null;
+}
 
 /** test_mode unless explicitly live — a missing or misspelled variable can never charge real cards. */
 const environment = (): "live_mode" | "test_mode" => (process.env.DODO_PAYMENTS_ENVIRONMENT === "live_mode" ? "live_mode" : "test_mode");
@@ -32,7 +32,7 @@ export function dodo(): DodoPayments | null {
   return new DodoPayments({ bearerToken, environment: environment(), webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_KEY ?? null });
 }
 
-export const billingConfigured = () => !!process.env.DODO_PAYMENTS_API_KEY && PLANS.every((p) => planProductId(p.id));
+export const billingConfigured = () => !!process.env.DODO_PAYMENTS_API_KEY && !!planProductId("starter") && !!planProductId("pro");
 
 /** Map a Dodo subscription status onto ours (active | on_hold | cancelled | failed | expired | pending). */
 export function planStatus(dodoStatus: string): string {
@@ -41,6 +41,25 @@ export function planStatus(dodoStatus: string): string {
   return "pending";
 }
 
-export function planFromProduct(productId: string): PlanId | null {
-  return PLANS.find((p) => planProductId(p.id) === productId)?.id ?? null;
+/** The workspace's effective plan (Free unless a paid subscription is active) and its billing row. */
+export async function getWorkspacePlan(tenantId: string) {
+  const [row] = await db().select().from(schema.workspacePlans).where(eq(schema.workspacePlans.tenantId, tenantId));
+  return { spec: PLANS[resolvePlan(row)], row: row ?? null };
+}
+
+/** Month-to-date usage against the plan's metered limits. */
+export async function getPlanUsage(tenantId: string) {
+  const month = monthStart();
+  const [[requests], [runs], [sites]] = await Promise.all([
+    db()
+      .select({ n: sql<number>`coalesce(sum(${schema.sdkEventDaily.count}), 0)::bigint` })
+      .from(schema.sdkEventDaily)
+      .where(and(eq(schema.sdkEventDaily.tenantId, tenantId), gte(schema.sdkEventDaily.date, month.date))),
+    db()
+      .select({ n: count() })
+      .from(schema.agentNickRuns)
+      .where(and(eq(schema.agentNickRuns.tenantId, tenantId), gte(schema.agentNickRuns.createdAt, month.at))),
+    db().select({ n: count() }).from(schema.agentNickSites).where(eq(schema.agentNickSites.tenantId, tenantId))
+  ]);
+  return { requests: Number(requests?.n ?? 0), runs: runs?.n ?? 0, sites: sites?.n ?? 0, since: month.date };
 }

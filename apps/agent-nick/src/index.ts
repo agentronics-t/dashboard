@@ -69,7 +69,6 @@ if (mode === "job") {
     executor,
     followup,
     webhookSecret: env.GITHUB_WEBHOOK_SECRET,
-    requirePlan: env.REQUIRE_PLAN,
     devAuth: env.DEV_AUTH
   });
 

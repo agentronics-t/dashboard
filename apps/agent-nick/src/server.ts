@@ -1,11 +1,13 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
-import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { schema, type Db } from "@agentronics/intel-schema/db";
 import { AuthError, type AuthVerifier } from "./auth.ts";
 import type { Executor } from "./executor.ts";
 import { GitHubError, verifyWebhookSignature, type GitHub, type GitHubApp } from "./github/client.ts";
 import { handleWebhook, markMerged, type FollowupDeps } from "./pipeline/followup.ts";
+import { limitError, runsThisMonth, siteCount, tenantPlan } from "./plan.ts";
+import type { ToolStrategy } from "@agentronics/intel-schema";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -24,15 +26,12 @@ export interface ServerDeps {
   executor: Executor;
   followup: FollowupDeps;
   webhookSecret: string;
-  requirePlan: boolean;
   /** Local dev: trust "dev-tenant:<uuid>" tokens (never in production — env refuses it). */
   devAuth?: boolean;
 }
 
 const ACTIVE = ["queued", "running", "awaiting_review"];
 
-/** WebMCP tools per site by plan (agentronics.dev/pricing); unlisted plans are unlimited. */
-const PLAN_TOOL_LIMIT: Record<string, number> = { lite: 10 };
 
 export function buildServer(deps: ServerDeps) {
   const { db, executor } = deps;
@@ -194,6 +193,13 @@ export function buildServer(deps: ServerDeps) {
       if (!requireAdmin(req, reply)) return;
       const body = z.object({ installationId: z.coerce.number().int().positive(), repoId: z.coerce.number().int().positive() }).parse(req.body);
       if (!(await ownedInstallation(req.tenantId, body.installationId))) return reply.status(404).send({ error: "installation_not_found" });
+      const plan = await tenantPlan(db, req.tenantId);
+      const maxSites = plan.limits.agentNickSites;
+      if (maxSites !== null && (await siteCount(db, req.tenantId, body.repoId)) >= maxSites) {
+        return reply
+          .status(402)
+          .send(limitError(`Your ${plan.name} plan includes ${maxSites} site${maxSites === 1 ? "" : "s"}.`, (p) => (p.limits.agentNickSites ?? Infinity) > maxSites));
+      }
       const repo = await deps.github(body.installationId).repoById(body.repoId); // proves the installation can see it
       const [site] = await db
         .insert(schema.agentNickSites)
@@ -231,6 +237,13 @@ export function buildServer(deps: ServerDeps) {
         .orderBy(desc(schema.agentNickRuns.createdAt))
         .limit(1);
       if (active) return reply.status(409).send({ error: "run_in_progress", runId: active.id });
+      const plan = await tenantPlan(db, req.tenantId);
+      const maxRuns = plan.limits.agentNickRunsPerMonth;
+      if (maxRuns !== null && (await runsThisMonth(db, req.tenantId)) >= maxRuns) {
+        return reply
+          .status(402)
+          .send(limitError(`You've used ${maxRuns === 1 ? "the 1 Agent Nick run" : `all ${maxRuns} Agent Nick runs`} in your ${plan.name} plan this month.`, (p) => (p.limits.agentNickRunsPerMonth ?? Infinity) > maxRuns));
+      }
       const [run] = await db
         .insert(schema.agentNickRuns)
         .values({ tenantId: req.tenantId, siteId, createdBy: req.userId })
@@ -253,22 +266,26 @@ export function buildServer(deps: ServerDeps) {
         })
         .parse(req.body);
 
-      if (deps.requirePlan) {
-        const [plan] = await db
-          .select({ plan: schema.workspacePlans.plan })
-          .from(schema.workspacePlans)
-          .where(
-            and(
-              eq(schema.workspacePlans.tenantId, req.tenantId),
-              eq(schema.workspacePlans.status, "active"),
-              or(isNull(schema.workspacePlans.currentPeriodEnd), gt(schema.workspacePlans.currentPeriodEnd, sql`now()`))
-            )
-          );
-        if (!plan) return reply.status(402).send({ error: "plan_required" });
-        const limit = PLAN_TOOL_LIMIT[plan.plan];
-        const approved = body.tools.filter((t) => t.approved).length;
-        if (limit !== undefined && approved > limit) {
-          return reply.status(402).send({ error: "plan_limit", message: `Your ${plan.plan} plan includes up to ${limit} WebMCP tools; you approved ${approved}.` });
+      // Plan limits: how many tools, and which kinds, this workspace may ship.
+      const plan = await tenantPlan(db, req.tenantId);
+      const approvedIds = body.tools.filter((t) => t.approved).map((t) => t.id);
+      const max = plan.limits.agentNickToolsPerSite;
+      if (max !== null && approvedIds.length > max) {
+        return reply
+          .status(402)
+          .send(limitError(`Your ${plan.name} plan includes up to ${max} tools per site; you approved ${approvedIds.length}.`, (p) => (p.limits.agentNickToolsPerSite ?? Infinity) >= approvedIds.length));
+      }
+      if (approvedIds.length) {
+        const kinds = await db
+          .select({ name: schema.agentNickTools.name, source: schema.agentNickTools.source })
+          .from(schema.agentNickTools)
+          .where(and(eq(schema.agentNickTools.runId, runId), inArray(schema.agentNickTools.id, approvedIds)));
+        const locked = kinds.filter((k) => !plan.limits.agentNickStrategies.includes((k.source as { strategy: ToolStrategy }).strategy));
+        if (locked.length) {
+          const need = (locked[0]?.source as { strategy: ToolStrategy }).strategy;
+          return reply
+            .status(402)
+            .send(limitError(`${locked.map((k) => k.name).join(", ")} ${locked.length === 1 ? "isn't" : "aren't"} included in your ${plan.name} plan.`, (p) => p.limits.agentNickStrategies.includes(need)));
         }
       }
 

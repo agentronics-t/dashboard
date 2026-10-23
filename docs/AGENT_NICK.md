@@ -20,7 +20,7 @@ console (Vercel)  ──Clerk token──▶  agent-nick (Cloud Run)  ──▶ 
 | Read the code | code | One API call lists the tree. Only the files a step needs are fetched. No clone. |
 | Framework, pages, actions | code | `package.json`, file conventions and the TypeScript parser. Each page becomes a few-hundred-token digest. |
 | Propose tools | Gemini (low effort) | One structured-output call per batch of pages. Code then enforces the rules: real source only, declarative forms only where safe, no password or card forms, risk mapped to hints and default auth. |
-| Your review | customer | Pauses the LangGraph run (`interrupt`). It resumes in any process when they approve. Needs an active plan (Lite allows at most 10 tools). |
+| Your review | customer | Pauses the LangGraph run (`interrupt`). It resumes in any process when they approve. Plan limits apply: tools per site and tool types (Free: 5 form tools; Starter: 15 incl. page actions + API calls; Pro: unlimited incl. server actions). |
 | Write code | templates + Gemini (medium) | `toolname` attributes on existing `<form>`s, `data-agent-tool` anchors for UI-only actions, one `webmcp-tools` module, and a mount per framework. Gemini writes only the bodies of fetch / server-action tools, checked and repaired once. |
 | Validate | code | Every changed file must parse, and the module must follow the WebMCP guide's hard rules. |
 | Pull request | GitHub API | One commit on `agentronics/agent-nick-<run>`. The PR body lists every tool. |
@@ -53,8 +53,8 @@ console (Vercel)  ──Clerk token──▶  agent-nick (Cloud Run)  ──▶ 
      - Push
    - **Where can it be installed:** Any account.
    - Then generate a **private key** and a **client secret**, and save them as Secret Manager `github-app-private-key` and `github-app-client-secret`.
-4. **Dodo Payments.**
-   - **Products:** create three monthly subscription products: Lite $29, Starter $89, Team $199.
+4. **Dodo Payments.** Plans and limits live in `packages/intel-schema/src/plans.ts` (Free / Starter $19 / Pro $49 / Enterprise). Full payment setup: `to_do_finally.md` → Payments.
+   - **Products:** create two monthly subscription products: Starter $19 and Pro $49.
    - **Webhook:** add one pointing at `https://app.agentronics.dev/api/dodo/webhook` for the `subscription.*` events.
 5. **Database.** Apply migration `0005_agent_nick` to production **before** the console with Agent Nick deploys:
    ```bash
@@ -70,7 +70,7 @@ console (Vercel)  ──Clerk token──▶  agent-nick (Cloud Run)  ──▶ 
    - `DODO_PAYMENTS_API_KEY`
    - `DODO_PAYMENTS_ENVIRONMENT`
    - `DODO_PAYMENTS_WEBHOOK_KEY`
-   - `DODO_PRODUCT_LITE`, `DODO_PRODUCT_STARTER`, `DODO_PRODUCT_TEAM`
+   - `DODO_PRODUCT_STARTER`, `DODO_PRODUCT_PRO`
 
 ## Local testing
 
@@ -83,4 +83,4 @@ console (Vercel)  ──Clerk token──▶  agent-nick (Cloud Run)  ──▶ 
   - `FAKE_LLM=1` swaps Gemini for a rule-based stand-in.
   - `STOP_AT_REVIEW=1` leaves the run waiting for review.
   - `DRY_RUN_TENANT=<uuid>` attaches it to the console's tenant.
-- **Service with a console that has no Clerk:** run the service with `DEV_AUTH=true DRY_RUN=true REQUIRE_PLAN=false`. `DEV_AUTH` is refused when `NODE_ENV=production`.
+- **Service with a console that has no Clerk:** run the service with `DEV_AUTH=true DRY_RUN=true`. `DEV_AUTH` is refused when `NODE_ENV=production`.

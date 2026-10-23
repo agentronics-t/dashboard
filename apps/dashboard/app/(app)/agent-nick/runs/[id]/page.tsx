@@ -2,17 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Card, CardTitle, PageHeader, fmt } from "@/components/ui";
 import { Pipeline, RunLog, statusBadgeProps } from "@/components/agent-nick/Pipeline";
-import { ReviewPanel, type ReviewTool } from "@/components/agent-nick/ReviewPanel";
+import { ReviewPanel, type ReviewPlan, type ReviewTool } from "@/components/agent-nick/ReviewPanel";
 import { AcceptButton, RerunButton } from "@/components/agent-nick/RunActions";
 import { LiveRefresh } from "@/components/LiveRefresh";
-import { getRun, getWorkspacePlan, timeAgo } from "@/lib/agentNick";
-import { PLANS, billingConfigured } from "@/lib/billing";
+import { upgradeFor } from "@agentronics/intel-schema";
+import { getRun, timeAgo } from "@/lib/agentNick";
+import { billingConfigured, getWorkspacePlan } from "@/lib/billing";
+import { planCards } from "@/lib/planCards";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
 const PLAN_NOTE: Record<string, string> = {
-  active: "Payment received — your plan is active. Approve the tools to continue.",
+  active: "Payment received — your new plan is active. Pick the tools and approve to continue.",
   pending: "Your payment is still being confirmed. This page updates as soon as it clears.",
   failed: "That payment didn't go through. Nothing was charged.",
   unknown: "We couldn't confirm the payment yet. If you completed checkout, it will show up here shortly."
@@ -26,7 +28,16 @@ export default async function RunPage({ params, searchParams }: { params: Promis
   const data = await getRun(tenantId, id);
   if (!data) notFound();
   const { run, site, events, tools } = data;
-  const plan = run.status === "awaiting_review" ? await getWorkspacePlan(tenantId) : null;
+  const plan = run.status === "awaiting_review" ? (await getWorkspacePlan(tenantId)).spec : null;
+  const reviewPlan: ReviewPlan | null = plan && {
+    id: plan.id,
+    name: plan.name,
+    toolsPerSite: plan.limits.agentNickToolsPerSite,
+    strategies: plan.limits.agentNickStrategies,
+    unlockedBy: Object.fromEntries(
+      (["form", "dom", "fetch", "server_action"] as const).map((s) => [s, upgradeFor((p) => p.limits.agentNickStrategies.includes(s))?.name ?? ""])
+    )
+  };
 
   const b = statusBadgeProps(run.status);
   const moving = ["queued", "running"].includes(run.status) || (run.status === "pr_open" && run.ciStatus === "pending");
@@ -84,7 +95,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
             Found {fmt(run.pagesFound)} pages and {fmt(run.actionsFound)} actions. Untick anything you don&apos;t want agents to use, and choose who may use each
             tool. Read-only tools run without asking; payments and irreversible actions always ask the visitor first.
           </p>
-          <ReviewPanel runId={run.id} tools={reviewTools} plans={PLANS} activePlan={plan?.active ? plan.plan : null} billingReady={billingConfigured()} />
+          {reviewPlan && <ReviewPanel runId={run.id} tools={reviewTools} plan={reviewPlan} plans={planCards()} billingReady={billingConfigured()} />}
         </Card>
       )}
 

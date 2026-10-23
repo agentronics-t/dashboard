@@ -45,7 +45,6 @@ export async function nickFetch<T>(path: string, init: { method?: string; body?:
 }
 
 const FRIENDLY: Record<string, string> = {
-  plan_required: "Pick a plan to approve the tools.",
   admin_required: "Only organization admins can do this.",
   not_awaiting_review: "This run isn't waiting for a review anymore.",
   no_open_pr: "There's no open pull request for this run.",
@@ -110,13 +109,6 @@ export async function getRun(tenantId: string, runId: string) {
     db().select().from(schema.agentNickTools).where(eq(schema.agentNickTools.runId, runId)).orderBy(asc(schema.agentNickTools.page), asc(schema.agentNickTools.name))
   ]);
   return { ...row, events, tools };
-}
-
-export async function getWorkspacePlan(tenantId: string) {
-  const [plan] = await db().select().from(schema.workspacePlans).where(eq(schema.workspacePlans.tenantId, tenantId));
-  if (!plan) return null;
-  const active = plan.status === "active" && (!plan.currentPeriodEnd || plan.currentPeriodEnd > new Date());
-  return { ...plan, active };
 }
 
 /** "3 min ago" style relative time. */

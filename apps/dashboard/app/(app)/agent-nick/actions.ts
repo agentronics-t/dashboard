@@ -1,11 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
-import { schema } from "@agentronics/intel-schema/db";
 import { NickError, nickFetch } from "@/lib/agentNick";
-import { dodo, isPlanId, planProductId } from "@/lib/billing";
-import { db, getTenantId, requireWorkspaceAdmin } from "@/lib/tenant";
+import { getTenantId, requireWorkspaceAdmin } from "@/lib/tenant";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
 
@@ -86,35 +83,5 @@ export async function acceptRun(runId: string): Promise<ActionResult> {
     revalidatePath(`/agent-nick/runs/${runId}`);
     revalidatePath("/agent-nick");
     return {};
-  });
-}
-
-/** Start a Dodo checkout for a plan; Dodo returns the buyer to /agent-nick/billing/return. */
-export async function startPlanCheckout(plan: string, runId: string | null): Promise<ActionResult<{ url: string }>> {
-  return guard(async (tenantId) => {
-    if (!isPlanId(plan)) throw new Error("Unknown plan.");
-    const client = dodo();
-    const productId = planProductId(plan);
-    if (!client || !productId) throw new NickError(503, "billing_not_configured", "Payments aren't set up on this console yet.");
-    const h = await headers();
-    const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
-    const back = `${origin}/agent-nick/billing/return${runId ? `?run=${encodeURIComponent(runId)}` : ""}`;
-    const session = await client.checkoutSessions.create({
-      product_cart: [{ product_id: productId, quantity: 1 }],
-      metadata: { tenant_id: tenantId, plan },
-      return_url: back,
-      cancel_url: runId ? `${origin}/agent-nick/runs/${runId}` : `${origin}/agent-nick`,
-      customization: { theme: "system" }
-    });
-    if (!session.checkout_url) throw new Error("Couldn't open the checkout page.");
-    // Remember which checkout belongs to this workspace; confirmed on return or by webhook.
-    await db()
-      .insert(schema.workspacePlans)
-      .values({ tenantId, plan, status: "pending", checkoutSessionId: session.session_id })
-      .onConflictDoUpdate({
-        target: schema.workspacePlans.tenantId,
-        set: { checkoutSessionId: session.session_id, updatedAt: new Date() }
-      });
-    return { url: session.checkout_url };
   });
 }
