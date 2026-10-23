@@ -33,6 +33,7 @@ export interface PlanSpec {
     agentApiKeys: number | null;
     /** 0 = authorization not included. */
     authzPolicies: number | null;
+    /** Team members who can sign in to the console ("seats"). */
     seats: number | null;
   };
   features: {
