@@ -84,7 +84,7 @@ export function Sidebar() {
   };
 
   const NavBtn = ({ href, label, icon }: { href: string; label: string; icon: string }) => (
-    <Link href={href} className="ag-nav-btn" data-active={pathname.startsWith(href)} title={label} style={{ justifyContent: open ? "flex-start" : "center" }}>
+    <Link href={href} className="ag-nav-btn" data-active={pathname === href || pathname.startsWith(`${href}/`)} title={label} style={{ justifyContent: open ? "flex-start" : "center" }}>
       <Icon name={icon} />
       <span style={labelStyle}>{label}</span>
     </Link>
@@ -92,10 +92,12 @@ export function Sidebar() {
 
   return (
     <aside
+      className="ag-pcb"
       style={{
         width: open ? 244 : 68,
         flex: "none",
-        background: "var(--surface)",
+        background: "var(--canvas)",
+        color: "var(--content)",
         borderRight: "1px solid var(--border)",
         padding: 14,
         display: "flex",
@@ -107,11 +109,11 @@ export function Sidebar() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 6px 2px", minHeight: 40 }}>
-        <Logomark size={26} onDark={dark} />
+        <Logomark size={24} />
         {open && (
           <div>
-            <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: "-0.02em", lineHeight: 1.1 }}>agentronics</div>
-            <div style={{ fontSize: 11, color: "var(--content-muted)", letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 600 }}>SDK</div>
+            <div style={{ fontFamily: "var(--font-heading)", fontWeight: 700, fontSize: 17, letterSpacing: "-0.02em", lineHeight: 1.1 }}>agentronics</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--content-muted)", letterSpacing: "0.1em", textTransform: "uppercase", marginTop: 2 }}>Console</div>
           </div>
         )}
       </div>

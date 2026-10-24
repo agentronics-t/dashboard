@@ -59,9 +59,9 @@ export function Badge({ children, kind = "info" }: { children: ReactNode; kind?:
 }
 
 export const LANES = [
-  { key: "webmcp", label: "WebMCP", color: "var(--brand)" },
-  { key: "webbotauth", label: "Web Bot Auth", color: "var(--accent)" },
-  { key: "stealth", label: "Stealth", color: "var(--neutral-300)" }
+  { key: "webmcp", label: "WebMCP", color: "var(--data-1)" },
+  { key: "webbotauth", label: "Web Bot Auth", color: "var(--data-2)" },
+  { key: "stealth", label: "Stealth", color: "var(--data-3)" }
 ];
 
 export function Legend({ items }: { items: { label: string; color: string }[] }) {

@@ -78,7 +78,7 @@ export function PluginCard({
 
       <button
         onClick={() => setOpenForm((o) => !o)}
-        style={{ alignSelf: "flex-start", padding: "8px 14px", borderRadius: "var(--radius-md)", border: connected ? "1px solid var(--border-strong)" : "none", background: connected ? "transparent" : "var(--brand-solid)", color: connected ? "var(--content)" : "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+        style={{ alignSelf: "flex-start", padding: "8px 14px", borderRadius: "var(--radius-md)", border: connected ? "1px solid var(--border-strong)" : "none", background: connected ? "transparent" : "var(--action)", color: connected ? "var(--content)" : "var(--action-content)", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
       >
         {openForm ? "Close" : connected ? "Reconfigure" : "Connect"}
       </button>
@@ -90,7 +90,7 @@ export function PluginCard({
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--content-secondary)" }}>{plugin.credentialHint} (→ Secret Manager, never the DB)</label>
           <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="API token / key" style={field} />
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button onClick={save} disabled={busy} style={{ padding: "8px 14px", borderRadius: "var(--radius-md)", border: "none", background: "var(--brand-solid)", color: "#fff", fontWeight: 600, fontSize: 13, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 }}>
+            <button onClick={save} disabled={busy} style={{ padding: "8px 14px", borderRadius: "var(--radius-md)", border: "none", background: "var(--action)", color: "var(--action-content)", fontWeight: 600, fontSize: 13, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 }}>
               {busy ? "Saving…" : "Save"}
             </button>
             {msg && <span style={{ fontSize: 12, color: "var(--content-muted)" }}>{msg}</span>}

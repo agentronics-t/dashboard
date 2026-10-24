@@ -65,7 +65,7 @@ export default async function AuthzPage() {
           <BarList
             items={[
               { label: "allowed", value: decisions.allowed, color: "var(--success)" },
-              { label: "approved", value: decisions.approved, color: "var(--brand)" },
+              { label: "approved", value: decisions.approved, color: "var(--data-3)" },
               { label: "refused", value: decisions.refused, color: "var(--warning)" },
               { label: "denied", value: decisions.denied, color: "var(--danger)" }
             ]}

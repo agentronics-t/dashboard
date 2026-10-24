@@ -93,7 +93,7 @@ export function BarList({ items }: { items: Bar[] }) {
             {it.label}
           </span>
           <div style={{ flex: 1, height: 9, borderRadius: "var(--radius-pill)", background: "var(--surface-raised)", overflow: "hidden" }}>
-            <div style={{ width: `${(it.value / max) * 100}%`, height: "100%", background: it.color ?? "var(--brand)" }} />
+            <div style={{ width: `${(it.value / max) * 100}%`, height: "100%", background: it.color ?? "var(--data-1)" }} />
           </div>
           <span style={{ width: 56, flex: "none", textAlign: "right", fontSize: 13, color: "var(--content-muted)" }}>{fmt(it.value)}</span>
         </div>

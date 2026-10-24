@@ -1,78 +1,89 @@
-/* Agentronics design tokens — ported verbatim from the design system
-   (Geist + JetBrains Mono, indigo #5a4fd9 / #736ced, amber, flat hairlines). */
-
-@font-face {
-  font-family: "Geist";
-  src: url("/fonts/Geist-Variable.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "JetBrains Mono";
-  src: url("/fonts/JetBrainsMono-Variable.ttf") format("truetype-variations");
-  font-weight: 100 800;
-  font-style: normal;
-  font-display: swap;
-}
+/* Agentronics "Circuit Copper" tokens (agentronics-design-guide.md).
+   Copper = actions only (primary buttons, with PCB Black text).
+   Verdigris = done / ready / good. Bone page, PCB Black sidebar.
+   Fonts come from next/font in app/layout.tsx (--font-display / --font-sans / --font-mono). */
 
 :root {
-  --neutral-200: #dadde5;
-  --neutral-300: #bcc2ce;
+  --pcb-black: #0d1a16;
+  --bone: #f5f1e8;
+  --copper: #e8763a;
+  --verdigris: #2bb39a;
+  --verdigris-deep: #12715f;
+  --fog: #5e6b66;
+  --seam: #ddd6c8;
 
-  --canvas: #f6f7f9;
-  --surface: #ffffff;
-  --surface-raised: #f6f7f9;
-  --border: #e3e6ec;
-  --border-strong: #cbd0da;
-  --content: #0e1017;
-  --content-secondary: #515a6c;
-  --content-muted: #828a9b;
+  --neutral-200: #ddd6c8;
+  --neutral-300: #c9c0ae;
 
-  --brand: #736ced;
-  --brand-solid: #5a4fd9;
-  --brand-soft: #f0effe;
-  --accent: #ff9e1c;
-  --accent-content: #06070e;
-  --ring: #736ced;
+  --canvas: var(--bone);
+  --surface: #fbf8f2;
+  --surface-raised: #efe9dd;
+  --border: var(--seam);
+  --border-strong: #c9c0ae;
+  --content: var(--pcb-black);
+  --content-secondary: #3e4b46;
+  --content-muted: var(--fog);
 
-  --success: #18935a; --success-bg: #e7f6ee;
-  --warning: #d97706; --warning-bg: #fdf2e0;
-  --danger: #d92d3c;  --danger-bg: #fdecec;
-  --info: #2081c3;    --info-bg: #e6f2fb;
+  --brand: var(--verdigris-deep);
+  --brand-solid: var(--verdigris-deep);
+  --brand-soft: #e2eee8;
+  --ring: var(--verdigris-deep);
 
-  --code-bg: #0e1017; --code-fg: #e4e2fd;
+  /* the one clickable colour */
+  --action: var(--copper);
+  --action-hover: #f08a52;
+  --action-content: var(--pcb-black);
+  --accent: var(--copper);
+  --accent-content: var(--pcb-black);
 
-  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --success: var(--verdigris-deep); --success-bg: #e2eee8;
+  --warning: #8a5a00; --warning-bg: #f4e7c8;
+  --danger: #b42318;  --danger-bg: #f8e3df;
+  --info: #2f5f8a;    --info-bg: #e3ebf2;
 
-  --radius-sm: 7px; --radius-md: 9px; --radius-lg: 12px; --radius-xl: 14px; --radius-pill: 999px;
-  --shadow-raise: 0 8px 24px -12px rgba(14,16,23,.18);
-  --shadow-glow: 0 8px 24px -10px var(--brand);
-  --ring-focus: 0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent);
+  /* categorical chart series, fixed order (validated: dataviz validate_palette, light on --surface) */
+  --data-1: #0f8a72;
+  --data-2: #b9771f;
+  --data-3: #3f6fa8;
+
+  --code-bg: var(--pcb-black); --code-fg: #e9e4d8;
+
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-heading: var(--font-display), var(--font-sans);
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 14px; --radius-pill: 999px;
+  --shadow-raise: 0 10px 30px -14px rgba(13,26,22,.28);
+  --shadow-glow: none;
+  --ring-focus: 0 0 0 3px color-mix(in srgb, var(--ring) 32%, transparent);
   --dur-fast: .15s; --dur-med: .25s; --ease-out: cubic-bezier(0.2,0,0,1);
 }
 
-.dark {
-  --neutral-200: #262b35;
-  --neutral-300: #3b4350;
-  --canvas: #06070e;
-  --surface: #0e1017;
-  --surface-raised: #181c24;
-  --border: #262b35;
-  --border-strong: #3b4350;
-  --content: #f4f5f8;
-  --content-secondary: #b6bcca;
-  --content-muted: #8b93a4;
-  --brand: #8d85f2;
-  --brand-solid: #5a4fd9;
-  --brand-soft: #1a1840;
-  --accent: #ffae33;
-  --success: #34d399; --success-bg: #0e2a1d;
-  --warning: #fbbf24; --warning-bg: #2e2106;
-  --danger: #f76e72;  --danger-bg: #2c1315;
-  --info: #38bdf8;    --info-bg: #0a2433;
-  --code-bg: #0a0b12; --code-fg: #cbc7fb;
+/* PCB Black: the dark theme, and always the sidebar. */
+.dark, .ag-pcb {
+  --neutral-200: #253a33;
+  --neutral-300: #36504a;
+  --canvas: var(--pcb-black);
+  --surface: #132620;
+  --surface-raised: #1a2f28;
+  --border: #253a33;
+  --border-strong: #36504a;
+  --content: var(--bone);
+  --content-secondary: #c4cbc6;
+  --content-muted: #8e9b95;
+  --brand: var(--verdigris);
+  --brand-solid: var(--verdigris);
+  --brand-soft: #123a31;
+  --ring: var(--verdigris);
+  --success: var(--verdigris); --success-bg: #123a31;
+  --warning: #e0b04a; --warning-bg: #2e2510;
+  --danger: #f07a6b;  --danger-bg: #3a1a16;
+  --info: #8db4e0;    --info-bg: #14283a;
+  /* validated dark on #132620 */
+  --data-1: #1fa088;
+  --data-2: #bc7f30;
+  --data-3: #6e92d8;
+  --code-bg: #08120f; --code-fg: #e9e4d8;
 }
 
 * { box-sizing: border-box; }
@@ -87,6 +98,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 code, pre, kbd, samp { font-family: var(--font-mono); }
+h1, h2, h3 { font-family: var(--font-heading); }
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; }
 
@@ -113,8 +125,8 @@ button { font-family: inherit; }
 .ag-btn:hover { background: var(--surface-raised); }
 .ag-btn:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 .ag-btn:disabled { opacity: .55; cursor: not-allowed; }
-.ag-btn-primary { background: var(--brand-solid); border-color: var(--brand-solid); color: #fff; }
-.ag-btn-primary:hover { background: color-mix(in srgb, var(--brand-solid) 86%, #000); }
+.ag-btn-primary { background: var(--action); border-color: var(--action); color: var(--action-content); }
+.ag-btn-primary:hover { background: var(--action-hover); border-color: var(--action-hover); }
 .ag-btn-sm { padding: 5px 10px; font-size: 12.5px; }
 .ag-input {
   width: 100%; padding: 8px 11px; border-radius: var(--radius-md); border: 1px solid var(--border-strong);
@@ -122,8 +134,7 @@ button { font-family: inherit; }
 }
 .ag-input:focus { outline: none; border-color: var(--ring); box-shadow: var(--ring-focus); }
 .ag-select { padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); color: var(--content); font: inherit; font-size: 12.5px; }
-.ag-link { color: var(--brand-solid); font-weight: 600; }
-.dark .ag-link { color: var(--brand); }
+.ag-link { color: var(--brand); font-weight: 600; }
 .ag-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .ag-mono { font-family: var(--font-mono); }
 .ag-muted { color: var(--content-muted); }
@@ -144,10 +155,10 @@ button { font-family: inherit; }
 .ag-node[data-state="pending"] { opacity: .62; }
 .ag-node-head { display: flex; align-items: center; gap: 8px; }
 .ag-dot { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; background: var(--surface-raised); color: var(--content-muted); border: 1px solid var(--border-strong); }
-.ag-node[data-state="done"] .ag-dot { background: var(--success); border-color: var(--success); color: #fff; }
-.ag-node[data-state="running"] .ag-dot { background: var(--brand-solid); border-color: var(--brand-solid); color: #fff; animation: ag-node-pulse 1.4s ease-in-out infinite; }
-.ag-node[data-state="waiting"] .ag-dot { background: var(--warning); border-color: var(--warning); color: #fff; }
-.ag-node[data-state="failed"] .ag-dot { background: var(--danger); border-color: var(--danger); color: #fff; }
+.ag-node[data-state="done"] .ag-dot { background: var(--success); border-color: var(--success); color: var(--surface); }
+.ag-node[data-state="running"] .ag-dot { background: var(--brand-solid); border-color: var(--brand-solid); color: var(--surface); animation: ag-node-pulse 1.4s ease-in-out infinite; }
+.ag-node[data-state="waiting"] .ag-dot { background: var(--warning); border-color: var(--warning); color: var(--surface); }
+.ag-node[data-state="failed"] .ag-dot { background: var(--danger); border-color: var(--danger); color: var(--surface); }
 .ag-node-label { font-size: 13px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
 .ag-node-who { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--content-muted); margin-top: 2px; }
 .ag-node-detail { font-size: 12px; color: var(--content-secondary); margin-top: 8px; line-height: 1.35; overflow-wrap: anywhere; }

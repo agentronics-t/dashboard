@@ -172,8 +172,8 @@ const primaryBtn: React.CSSProperties = {
   padding: "8px 16px",
   borderRadius: "var(--radius-md)",
   border: "none",
-  background: "var(--brand-solid)",
-  color: "#fff",
+  background: "var(--action)",
+  color: "var(--action-content)",
   fontSize: 14,
   fontWeight: 600,
   cursor: "pointer"

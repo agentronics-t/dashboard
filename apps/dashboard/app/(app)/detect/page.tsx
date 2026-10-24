@@ -45,7 +45,7 @@ export default async function DetectPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 18, marginBottom: 18 }}>
             <Card>
               <CardTitle>How they were found</CardTitle>
-              <BarList items={sources.filter((s) => s.count > 0).map((s) => ({ label: s.source, value: s.count, color: s.source === "Vision model" ? "var(--accent)" : "var(--brand)" }))} />
+              <BarList items={sources.filter((s) => s.count > 0).map((s) => ({ label: s.source, value: s.count, color: s.source === "Vision model" ? "var(--data-2)" : "var(--data-1)" }))} />
               <p className="ag-muted" style={{ fontSize: 12, margin: "10px 0 0", lineHeight: 1.5 }}>
                 Vision-model agents are spotted by how they interact — clicks with no mouse travel, clicks at an element&apos;s exact centre,
                 perfectly even typing. Detection only labels traffic; it never blocks it.
@@ -57,7 +57,7 @@ export default async function DetectPage() {
                 items={[...byClass].map(([label, value]) => ({
                   label: CLASS_LABEL[label] ?? label,
                   value,
-                  color: label === "crawler" ? "var(--accent)" : "var(--brand)"
+                  color: label === "crawler" ? "var(--data-2)" : "var(--data-1)"
                 }))}
               />
             </Card>

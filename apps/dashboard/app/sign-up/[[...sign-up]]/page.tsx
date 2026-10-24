@@ -1,9 +1,10 @@
 import { SignUp } from "@clerk/nextjs";
+import { AuthShell } from "@/components/AuthShell";
 
 export default function SignUpPage() {
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--canvas)" }}>
+    <AuthShell>
       <SignUp signInUrl="/sign-in" fallbackRedirectUrl="/detect" />
-    </div>
+    </AuthShell>
   );
 }
