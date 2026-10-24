@@ -55,3 +55,30 @@ export async function* streamAnswer(system: string, prompt: string): AsyncGenera
     if (chunk.text) yield chunk.text;
   }
 }
+
+/**
+ * One structured-output Gemini call (JSON matching `schema`). Returns null when
+ * Vertex isn't configured or the call fails, so callers can fall back.
+ * Uses PROCEDURAL_MODEL (default gemini-3.8-flash) in the `global` location.
+ */
+export async function generateJson<T>(system: string, prompt: string, schema: Record<string, unknown>): Promise<T | null> {
+  if (!vertexConfigured()) return null;
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const key = process.env.GOOGLE_GENAI_SA_KEY;
+    const ai = new GoogleGenAI({
+      vertexai: true,
+      project: PROJECT,
+      location: process.env.PROCEDURAL_LOCATION || "global",
+      ...(key ? { googleAuthOptions: { credentials: JSON.parse(key) } } : {})
+    });
+    const res = await ai.models.generateContent({
+      model: process.env.PROCEDURAL_MODEL || "gemini-3.8-flash",
+      contents: prompt,
+      config: { systemInstruction: system, temperature: 0.2, responseMimeType: "application/json", responseJsonSchema: schema }
+    });
+    return res.text ? (JSON.parse(res.text) as T) : null;
+  } catch {
+    return null;
+  }
+}

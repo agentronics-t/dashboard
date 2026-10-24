@@ -327,16 +327,75 @@ export const sdkToolRegistry = pgTable(
       .references(() => tenants.id, { onDelete: "cascade" }),
     siteId: text("site_id").notNull(),
     toolName: text("tool_name").notNull(),
+    title: text("title"),
+    // The description in the site's code (what Procedural memory optimises).
+    description: text("description"),
     groupName: text("group_name"),
     page: text("page"),
     inputSchema: jsonb("input_schema").notNull().default({}),
     outputSchema: jsonb("output_schema"),
+    annotations: jsonb("annotations"),
     tokens: integer("tokens").notNull().default(0),
+    // From the browser's last WebMCP registration (tool.surfaced events):
+    // callable | failed | disabled | unknown (never published yet).
+    status: text("status").notNull().default("unknown"),
+    statusError: text("status_error"),
+    statusAt: timestamp("status_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
   },
   (t) => [uniqueIndex("sdk_tool_registry_uq").on(t.tenantId, t.siteId, t.toolName)]
+);
+
+// Authorization rules managed in the console (Authz page). The SDK pulls them
+// with createDashboardSync().pullConfig(). siteId "*" applies to every site.
+// decision: allow | deny | review. minTrust: detected | declared | verified | linked.
+export const sdkPolicies = pgTable(
+  "sdk_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    siteId: text("site_id").notNull().default("*"),
+    tool: text("tool").notNull(), // tool name or glob (cart.*)
+    decision: text("decision").notNull(),
+    minTrust: text("min_trust").notNull().default("detected"),
+    allowedClasses: jsonb("allowed_classes").notNull().default([]),
+    rateLimit: jsonb("rate_limit"), // { max, windowSeconds }
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex("sdk_policies_uq").on(t.tenantId, t.siteId, t.tool),
+    index("sdk_policies_tenant_idx").on(t.tenantId)
+  ]
+);
+
+// Procedural memory: AI-written tool descriptions. A suggestion is shown next
+// to the original with both token counts; once approved, pullConfig() hands it
+// to the SDK, which publishes it to agents in place of the code's description.
+export const sdkToolDescriptions = pgTable(
+  "sdk_tool_descriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    siteId: text("site_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    original: text("original").notNull(),
+    suggested: text("suggested").notNull(),
+    originalTokens: integer("original_tokens").notNull(),
+    suggestedTokens: integer("suggested_tokens").notNull(),
+    rationale: text("rationale"),
+    status: text("status").notNull().default("suggested"), // suggested | approved | rejected
+    model: text("model"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true })
+  },
+  (t) => [uniqueIndex("sdk_tool_descriptions_uq").on(t.tenantId, t.siteId, t.toolName)]
 );
 
 // Latest site-memory snapshot + quality score per site (Knaph page).
@@ -452,9 +511,10 @@ export const billingEvents = pgTable("billing_events", {
 });
 
 // ---- agent API keys (agk_…) --------------------------------------------------
-// Minted in the console's Configure → API keys. Only the SHA-256 is stored;
-// the customer's middleware verifies keys with staticKeyVerifier() over the
-// AGENT_KEYS map the console exports (hash → identity).
+// Minted in the console's Auth page. Only the SHA-256 is stored. The customer's
+// middleware verifies keys live with createDashboardSync().keyVerifier()
+// (POST /v1/sdk/agent-keys/verify), or offline with staticKeyVerifier() over
+// the AGENT_KEYS map the console exports (hash → identity).
 export const agentKeys = pgTable(
   "agent_keys",
   {
@@ -468,6 +528,7 @@ export const agentKeys = pgTable(
     hashedKey: text("hashed_key").notNull(), // sha256 hex (matches hashAgentKey)
     prefix: text("prefix").notNull(), // agk_ + first 6 chars, for display
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true })
   },
   (t) => [

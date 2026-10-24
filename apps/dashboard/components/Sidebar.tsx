@@ -16,8 +16,8 @@ const SDK_NAV = [
   { href: "/auth", label: "Auth", icon: "key" },
   { href: "/authz", label: "Authz", icon: "shield" },
   { href: "/webmcp-tools", label: "WebMCP Tools", icon: "plug" },
-  { href: "/knaph", label: "Knaph", icon: "brain" },
-  { href: "/logs", label: "Logs", icon: "list" },
+  { href: "/knaph", label: "Memory", icon: "brain" },
+  { href: "/logs", label: "Observability", icon: "list" },
   { href: "/analytics", label: "Analytics", icon: "chart" }
 ];
 

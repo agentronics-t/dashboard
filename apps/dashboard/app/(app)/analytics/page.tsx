@@ -2,6 +2,7 @@ import { Badge, Card, CardTitle, Kpi, PageHeader, fmt } from "@/components/ui";
 import { ForecastBand } from "@/components/charts/ForecastBand";
 import { BarList, SdkEmpty } from "@/components/sdk";
 import { getSdkEventTotals, getSdkForecasts, getSdkInsights } from "@/lib/queries";
+import { getTop } from "@/lib/pillars";
 import { getTenantId } from "@/lib/tenant";
 import { LiveRefresh } from "@/components/LiveRefresh";
 
@@ -12,6 +13,7 @@ const PILLAR_LABEL: Record<string, string> = {
   "auth.identity_presented": "Auth presents",
   "authz.evaluated": "Authz decisions",
   "tool.executed": "Tool calls",
+  "tool.surfaced": "Tool registrations",
   "memory.accessed": "Memory reads",
   "sdk.error": "Errors"
 };
@@ -28,10 +30,15 @@ function renderBody(md: string) {
 
 export default async function AnalyticsPage() {
   const tenantId = await getTenantId();
-  const [totals, forecasts, insights] = await Promise.all([
+  const [totals, forecasts, insights, vendors, methods, topTools, topPages, classes] = await Promise.all([
     getSdkEventTotals(tenantId, 30),
     getSdkForecasts(tenantId),
-    getSdkInsights(tenantId)
+    getSdkInsights(tenantId),
+    getTop(tenantId, "agentVendor", { type: "tool.executed" }),
+    getTop(tenantId, "protocol", { type: "auth.identity_presented" }),
+    getTop(tenantId, "tool", { type: "tool.executed" }),
+    getTop(tenantId, "page"),
+    getTop(tenantId, "agentClass")
   ]);
 
   const all = Object.values(totals).reduce((s, n) => s + n, 0);
@@ -46,8 +53,9 @@ export default async function AnalyticsPage() {
         <SdkEmpty feature="SDK" />
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 18 }}>
+          <div className="ag-grid-kpi">
             <Kpi label="Total events" value={fmt(all)} sub="all pillars, 30d" />
+            <Kpi label="Agent types" value={fmt(classes.length)} sub={classes[0] ? `most: ${CLASS_LABEL[classes[0].label] ?? classes[0].label}` : "none yet"} />
             <Kpi label="Tool calls" value={fmt(toolCalls)} sub="tool.executed" />
             <Kpi label="Errors" value={fmt(errors)} sub="sdk.error" />
           </div>
@@ -60,6 +68,14 @@ export default async function AnalyticsPage() {
                 .map(([type, value]) => ({ label: PILLAR_LABEL[type] ?? type, value }))}
             />
           </Card>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 18, marginBottom: 18 }}>
+            <Breakdown title="Agents that use your tools" items={vendors} empty="No tool calls yet." />
+            <Breakdown title="How agents authenticate" items={methods} empty="No identities yet." />
+            <Breakdown title="Most-used tools" items={topTools} empty="No tool calls yet." />
+            <Breakdown title="Busiest pages" items={topPages} empty="No page data yet." />
+            <Breakdown title="Agent types" items={classes.map((c) => ({ ...c, label: CLASS_LABEL[c.label] ?? c.label }))} empty="No agents yet." />
+          </div>
 
           <Card style={{ marginBottom: 18 }}>
             <CardTitle>Forecast · next 14 days (events)</CardTitle>
@@ -92,5 +108,16 @@ export default async function AnalyticsPage() {
         </>
       )}
     </>
+  );
+}
+
+const CLASS_LABEL: Record<string, string> = { webmcp: "WebMCP", dom: "Browser automation", screenshot: "Vision model", crawler: "Crawler" };
+
+function Breakdown({ title, items, empty }: { title: string; items: { label: string; value: number }[]; empty: string }) {
+  return (
+    <Card>
+      <CardTitle>{title}</CardTitle>
+      {items.length ? <BarList items={items} /> : <div style={{ color: "var(--content-muted)", fontSize: 13 }}>{empty}</div>}
+    </Card>
   );
 }

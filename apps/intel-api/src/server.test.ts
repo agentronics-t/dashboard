@@ -556,3 +556,89 @@ test("prune keeps each workspace's plan retention (free 7d, starter 30d)", async
     await db.delete(schema.tenants).where(eq(schema.tenants.clerkOrgId, starterOrg));
   }
 });
+
+// ---- pillars v2: tool status, console config, live agent keys -------------
+
+const tenantRow = async () =>
+  (await db.select({ id: schema.tenants.id }).from(schema.tenants).where(eq(schema.tenants.clerkOrgId, ORG)))[0]!;
+
+test("tool.surfaced events set each tool's WebMCP status (callable / failed)", async () => {
+  await app.inject({
+    method: "POST",
+    url: "/v1/sdk/tools",
+    headers: { authorization: `Bearer ${ingestKey}` },
+    payload: {
+      siteId: "shop-acme",
+      tools: [
+        { name: "search", title: "Search", description: "Search the catalogue for products by keyword.", annotations: { readOnlyHint: true }, tokens: 30 },
+        { name: "checkout", description: "Pay for the cart.", tokens: 20 }
+      ]
+    }
+  });
+  const at = new Date().toISOString();
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/sdk/events",
+    headers: { authorization: `Bearer ${ingestKey}` },
+    payload: {
+      events: [
+        { id: `evt_${randomUUID()}`, siteId: "shop-acme", sessionId: "s", occurredAt: at, type: "tool.surfaced", tool: "search", outcome: "success", metadata: { state: "published" } },
+        { id: `evt_${randomUUID()}`, siteId: "shop-acme", sessionId: "s", occurredAt: at, type: "tool.surfaced", tool: "checkout", outcome: "error", error: "TypeError: invalid inputSchema", metadata: { state: "failed" } }
+      ]
+    }
+  });
+  assert.equal(res.statusCode, 202);
+  const rows = await db
+    .select({ name: schema.sdkToolRegistry.toolName, status: schema.sdkToolRegistry.status, err: schema.sdkToolRegistry.statusError, title: schema.sdkToolRegistry.title, description: schema.sdkToolRegistry.description })
+    .from(schema.sdkToolRegistry)
+    .where(eq(schema.sdkToolRegistry.tenantId, (await tenantRow()).id));
+  const byName = Object.fromEntries(rows.map((r) => [r.name, r]));
+  assert.equal(byName.search?.status, "callable");
+  assert.equal(byName.search?.title, "Search");
+  assert.equal(byName.search?.description, "Search the catalogue for products by keyword.");
+  assert.equal(byName.checkout?.status, "failed");
+  assert.equal(byName.checkout?.err, "TypeError: invalid inputSchema");
+});
+
+test("POST /v1/sdk/config returns site rules over '*' rules, most specific first, plus approved descriptions", async () => {
+  const tenantId = (await tenantRow()).id;
+  await db.insert(schema.sdkPolicies).values([
+    { tenantId, siteId: "*", tool: "*", decision: "allow", minTrust: "detected" },
+    { tenantId, siteId: "*", tool: "checkout", decision: "deny", minTrust: "detected" },
+    { tenantId, siteId: "shop-acme", tool: "checkout", decision: "review", minTrust: "verified", allowedClasses: ["webmcp"], rateLimit: { max: 3, windowSeconds: 60 } },
+    { tenantId, siteId: "other-site", tool: "search", decision: "deny", minTrust: "detected" }
+  ]);
+  await db.insert(schema.sdkToolDescriptions).values([
+    { tenantId, siteId: "shop-acme", toolName: "search", original: "Search the catalogue for products by keyword.", suggested: "Search products by keyword.", originalTokens: 30, suggestedTokens: 22, status: "approved" },
+    { tenantId, siteId: "shop-acme", toolName: "checkout", original: "Pay for the cart.", suggested: "Pay.", originalTokens: 20, suggestedTokens: 18, status: "suggested" }
+  ]);
+  const res = await app.inject({ method: "POST", url: "/v1/sdk/config", headers: { authorization: `Bearer ${ingestKey}` }, payload: { siteId: "shop-acme" } });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.deepEqual(
+    body.policies.map((p: { tool: string; decision: string }) => [p.tool, p.decision]),
+    [["checkout", "review"], ["*", "allow"]]
+  );
+  assert.deepEqual(body.policies[0].allowedClasses, ["webmcp"]);
+  assert.deepEqual(body.policies[0].rateLimit, { max: 3, windowSeconds: 60 });
+  assert.deepEqual(body.toolDescriptions, { search: "Search products by keyword." });
+});
+
+test("POST /v1/sdk/agent-keys/verify checks console-minted keys live (revocation is immediate)", async () => {
+  const tenantId = (await tenantRow()).id;
+  const key = `agk_${randomUUID().replace(/-/g, "")}`;
+  const { createHash } = await import("node:crypto");
+  const [row] = await db
+    .insert(schema.agentKeys)
+    .values({ tenantId, agentId: "booking-agent", name: "Booking agent", vendor: "Acme", hashedKey: createHash("sha256").update(key).digest("hex"), prefix: key.slice(0, 10) })
+    .returning({ id: schema.agentKeys.id });
+  const verify = (k: string) => app.inject({ method: "POST", url: "/v1/sdk/agent-keys/verify", headers: { authorization: `Bearer ${ingestKey}` }, payload: { key: k } });
+
+  const ok = await verify(key);
+  assert.equal(ok.statusCode, 200);
+  assert.deepEqual(ok.json(), { valid: true, agentId: "booking-agent", name: "Booking agent", vendor: "Acme" });
+  assert.deepEqual((await verify("agk_not-a-real-key")).json(), { valid: false });
+
+  await db.update(schema.agentKeys).set({ revokedAt: new Date() }).where(eq(schema.agentKeys.id, row!.id));
+  assert.deepEqual((await verify(key)).json(), { valid: false });
+});

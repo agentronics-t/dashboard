@@ -1,11 +1,14 @@
 import Fastify from "fastify";
-import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   sdkTraceBatch,
   sdkToolsPush,
   sdkMemoryPush,
+  sdkConfigRequest,
+  sdkAgentKeyVerify,
+  type SdkPolicyRule,
   type SdkEventType,
   type SdkEventOutcome,
   DEFAULT_CONTRACT_RETENTION_DAYS,
@@ -194,7 +197,13 @@ export function buildServer(deps: ServerDeps) {
     // Internal (Scheduler) callers may only run maintenance (and trigger
     // imports when intelligence is enabled); SDK ingest-key callers may only
     // push telemetry (events/tools/memory). Everything else needs a Clerk session.
-    const SDK_INGEST_PATHS = ["/v1/sdk/events", "/v1/sdk/tools", "/v1/sdk/memory"];
+    const SDK_INGEST_PATHS = [
+      "/v1/sdk/events",
+      "/v1/sdk/tools",
+      "/v1/sdk/memory",
+      "/v1/sdk/config",
+      "/v1/sdk/agent-keys/verify"
+    ];
     const INTERNAL_PATHS = ["/v1/maintenance/prune", ...(intelligence ? ["/v1/imports"] : [])];
     api.addHook("preHandler", async (req, reply) => {
       if (req.internal && !(req.method === "POST" && INTERNAL_PATHS.includes(req.url))) {
@@ -327,6 +336,34 @@ export function buildServer(deps: ServerDeps) {
           });
       }
 
+      // 3) WebMCP tool status: the browser reports each registration as a
+      //    tool.surfaced event (state published | failed | enabled | disabled).
+      //    The latest one per tool wins.
+      const STATE_TO_STATUS: Record<string, string> = { published: "callable", enabled: "callable", failed: "failed", disabled: "disabled" };
+      const latest = new Map<string, { siteId: string; tool: string; status: string; error: string | null; at: Date }>();
+      for (const e of events) {
+        if (e.type !== "tool.surfaced" || !e.tool) continue;
+        const status = STATE_TO_STATUS[String(e.metadata.state ?? "")];
+        if (!status) continue;
+        const at = new Date(e.occurredAt);
+        const k = `${e.siteId}|${e.tool}`;
+        const cur = latest.get(k);
+        if (!cur || cur.at <= at) latest.set(k, { siteId: e.siteId, tool: e.tool, status, error: e.error ?? null, at });
+      }
+      for (const t of latest.values()) {
+        await db
+          .update(schema.sdkToolRegistry)
+          .set({ status: t.status, statusError: t.status === "failed" ? t.error : null, statusAt: t.at })
+          .where(
+            and(
+              eq(schema.sdkToolRegistry.tenantId, tenantId),
+              eq(schema.sdkToolRegistry.siteId, t.siteId),
+              eq(schema.sdkToolRegistry.toolName, t.tool),
+              sql`(${schema.sdkToolRegistry.statusAt} IS NULL OR ${schema.sdkToolRegistry.statusAt} <= ${t.at.toISOString()}::timestamptz)`
+            )
+          );
+      }
+
       // Note: the tool registry + site-memory snapshot are NOT reconstructed
       // from trace metadata (real SDK traces are lightweight) — they're pushed
       // authoritatively via POST /v1/sdk/tools and /v1/sdk/memory below.
@@ -341,6 +378,9 @@ export function buildServer(deps: ServerDeps) {
       const tenantId = req.tenantId;
       for (const t of body.tools) {
         const row = {
+          title: t.title ?? null,
+          description: t.description ?? null,
+          annotations: t.annotations ?? null,
           groupName: t.group ?? null,
           page: t.page ?? null,
           inputSchema: t.inputSchema ?? {},
@@ -374,6 +414,66 @@ export function buildServer(deps: ServerDeps) {
           set: { ...mem, updatedAt: new Date() }
         });
       return reply.status(202).send({ ok: true, siteId: body.siteId });
+    });
+
+    // ---- console-managed config the SDK pulls (createDashboardSync().pullConfig) ----
+    // Authorization rules for this site (site-specific rules override "*" ones
+    // for the same tool) + the tool descriptions approved in Procedural memory.
+    api.post("/v1/sdk/config", async (req) => {
+      const { siteId } = sdkConfigRequest.parse(req.body);
+      const tenantId = req.tenantId;
+      const rows = await db
+        .select()
+        .from(schema.sdkPolicies)
+        .where(and(eq(schema.sdkPolicies.tenantId, tenantId), inArray(schema.sdkPolicies.siteId, ["*", siteId])));
+      const byTool = new Map<string, (typeof rows)[number]>();
+      for (const r of rows) if (!byTool.has(r.tool) || r.siteId !== "*") byTool.set(r.tool, r);
+      // Most specific patterns first so "cart.checkout" beats "cart.*" beats "*".
+      const specificity = (t: string) => (t === "*" ? 0 : t.includes("*") ? 1 : 2);
+      const policies: SdkPolicyRule[] = [...byTool.values()]
+        .sort((a, b) => specificity(b.tool) - specificity(a.tool) || b.tool.length - a.tool.length)
+        .map((r) => {
+          const rule: SdkPolicyRule = {
+            id: `console:${r.id}`,
+            tool: r.tool,
+            decision: r.decision as SdkPolicyRule["decision"],
+            minTrust: r.minTrust as SdkPolicyRule["minTrust"],
+            allowedClasses: (r.allowedClasses as SdkPolicyRule["allowedClasses"]) ?? []
+          };
+          const rl = r.rateLimit as SdkPolicyRule["rateLimit"] | null;
+          if (rl) rule.rateLimit = rl;
+          return rule;
+        });
+      const descriptions = await db
+        .select({ tool: schema.sdkToolDescriptions.toolName, text: schema.sdkToolDescriptions.suggested })
+        .from(schema.sdkToolDescriptions)
+        .where(
+          and(
+            eq(schema.sdkToolDescriptions.tenantId, tenantId),
+            eq(schema.sdkToolDescriptions.siteId, siteId),
+            eq(schema.sdkToolDescriptions.status, "approved")
+          )
+        );
+      return {
+        policies,
+        toolDescriptions: Object.fromEntries(descriptions.map((d) => [d.tool, d.text])),
+        fetchedAt: now().toISOString()
+      };
+    });
+
+    // ---- live agent-key verification (createDashboardSync().keyVerifier) -------
+    api.post("/v1/sdk/agent-keys/verify", async (req) => {
+      const { key } = sdkAgentKeyVerify.parse(req.body);
+      if (!key.startsWith("agk_")) return { valid: false };
+      const hashedKey = createHash("sha256").update(key).digest("hex");
+      const [row] = await db
+        .select({ id: schema.agentKeys.id, agentId: schema.agentKeys.agentId, name: schema.agentKeys.name, vendor: schema.agentKeys.vendor })
+        .from(schema.agentKeys)
+        .where(and(eq(schema.agentKeys.tenantId, req.tenantId), eq(schema.agentKeys.hashedKey, hashedKey), isNull(schema.agentKeys.revokedAt)));
+      if (!row) return { valid: false };
+      // Last-used is display-only; don't let it slow the check.
+      void db.update(schema.agentKeys).set({ lastUsedAt: now() }).where(eq(schema.agentKeys.id, row.id)).catch(() => undefined);
+      return { valid: true, agentId: row.agentId, name: row.name, vendor: row.vendor };
     });
 
     // ---- SDK ingest-key management (Clerk session only) ----------------
