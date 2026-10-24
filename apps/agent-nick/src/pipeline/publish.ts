@@ -17,7 +17,7 @@ export function prBody(opts: {
   const { tools, changes } = opts;
   const rows = tools.map(
     (t) =>
-      `| \`${t.name}\` | ${t.page === "*" ? "Every page" : `\`${t.page}\``} | ${t.kind === "form" ? "Form (declarative)" : t.strategy === "dom" ? "On-page action" : t.strategy === "server_action" ? "Server action" : "API call"} | ${RISK_LABEL[t.risk]} | ${AUTH_LABEL[t.auth]} |`
+      `| \`${t.name}\` | ${t.page === "*" ? "Every page" : `\`${t.page}\``} | ${t.kind === "form" ? "Form (filled + submitted)" : t.strategy === "dom" ? "On-page action" : t.strategy === "server_action" ? "Server action" : "API call"} | ${RISK_LABEL[t.risk]} | ${AUTH_LABEL[t.auth]} |`
   );
   return [
     `This PR makes your site agent-ready: it adds **${tools.length} WebMCP tool${tools.length === 1 ? "" : "s"}** so AI agents in the browser can use your site through typed tools instead of scraping and clicking.`,
@@ -36,8 +36,11 @@ export function prBody(opts: {
     ...(opts.manualSteps.length ? ["", "### One manual step", ...opts.manualSteps.map((s) => `- ${s}`)] : []),
     ...(opts.skipped.length ? ["", "### Not included", ...opts.skipped.map((s) => `- \`${s.name}\`: ${s.reason}`)] : []),
     "",
+    "### Govern them (optional)",
+    "Using the Agentronics SDK? Pass your client as the third argument of `registerAgentronicsTools(pathname, signal, client)` and the tools register through it — the rules, reviews and tool descriptions you manage in the Agentronics console then apply. No new dependency is added by this PR.",
+    "",
     "### Try it",
-    "1. Chrome 146+ → enable `chrome://flags/#enable-webmcp-testing`.",
+    "1. Chrome 149+ (WebMCP origin trial) or any Chrome with `about:flags#enable-webmcp-testing` turned on.",
     "2. Open a page of this branch's preview deploy, then inspect the tools with the Model Context Tool Inspector extension (or any WebMCP-aware agent).",
     "",
     `_Opened by Agentronics Agent Nick for ${opts.fw.label}.${opts.runUrl ? ` [View the run](${opts.runUrl})` : ""}_`

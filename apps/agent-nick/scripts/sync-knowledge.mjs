@@ -1,5 +1,7 @@
 // Compiles src/knowledge/**/*.md into src/knowledge/pack.generated.ts.
 // `--pull <ref>` first re-downloads Google's WebMCP guides at that git ref.
+// `--sdk-docs <dir>` first copies the Agentronics SDK pages Agent Nick needs
+// from the SDK repo's docs (apps/docs/content/docs), stripped of MDX components.
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -15,6 +17,40 @@ if (pull !== -1) {
     const url = `https://raw.githubusercontent.com/GoogleChrome/modern-web-guidance/${ref}/skills/modern-web-guidance/guides/webmcp/${g}.md`;
     const text = execFileSync("curl", ["-fsSL", url], { encoding: "utf8" });
     writeFileSync(join(root, "webmcp", `${g}.md`), text);
+  }
+}
+
+// The SDK pages that shape the code Agent Nick writes — kept short on purpose:
+// every page is in every prompt.
+const SDK_PAGES = [
+  "concepts/tool-management.mdx",
+  "concepts/procedural-memory.mdx",
+  "authorization.mdx",
+  "auth/overview.mdx",
+  "guides/migration-from-raw-webmcp.mdx"
+];
+
+/** MDX → plain Markdown: title from frontmatter, JSX components dropped (callout text kept). */
+function mdxToMd(src) {
+  const fm = /^---\n([\s\S]*?)\n---\n/.exec(src);
+  const title = fm ? (/^title:\s*(.+)$/m.exec(fm[1])?.[1] ?? "").trim() : "";
+  let body = fm ? src.slice(fm[0].length) : src;
+  body = body
+    .replace(/^<Callout[^>]*>\s*$/gm, "> ")
+    .replace(/^<\/Callout>\s*$/gm, "")
+    .replace(/^<[A-Z][A-Za-z]*[\s\S]*?\/>\s*$/gm, "") // self-closing widgets (<SchemaBlock … />)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return body.startsWith("# ") || !title ? `${body}\n` : `# ${title}\n\n${body}\n`;
+}
+
+const sdkDocs = process.argv.indexOf("--sdk-docs");
+if (sdkDocs !== -1) {
+  const dir = process.argv[sdkDocs + 1];
+  if (!dir) throw new Error("--sdk-docs needs the SDK docs directory (…/SDK/apps/docs/content/docs)");
+  for (const page of SDK_PAGES) {
+    const out = page.replace(/\//g, "-").replace(/\.mdx$/, ".md");
+    writeFileSync(join(root, "sdk", out), mdxToMd(readFileSync(join(dir, page), "utf8")));
   }
 }
 

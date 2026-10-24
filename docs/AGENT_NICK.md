@@ -19,9 +19,9 @@ console (Vercel)  ──Clerk token──▶  agent-nick (Cloud Run)  ──▶ 
 |---|---|---|
 | Read the code | code | One API call lists the tree. Only the files a step needs are fetched. No clone. |
 | Framework, pages, actions | code | `package.json`, file conventions and the TypeScript parser. Each page becomes a few-hundred-token digest. |
-| Propose tools | Gemini (low effort) | One structured-output call per batch of pages. Code then enforces the rules: real source only, declarative forms only where safe, no password or card forms, risk mapped to hints and default auth. |
+| Propose tools | Gemini (low effort) | One structured-output call per batch of pages. Code then enforces the rules: real source only, form tools only on forms whose fields all have names, no password or card forms, risk mapped to hints and default auth. |
 | Your review | customer | Pauses the LangGraph run (`interrupt`). It resumes in any process when they approve. Plan limits apply: tools per site and tool types (Free: 5 form tools; Starter: 15 incl. page actions + API calls; Pro: unlimited incl. server actions). |
-| Write code | templates + Gemini (medium) | `toolname` attributes on existing `<form>`s, `data-agent-tool` anchors for UI-only actions, one `webmcp-tools` module, and a mount per framework. Gemini writes only the bodies of fetch / server-action tools, checked and repaired once. |
+| Write code | templates + Gemini (medium) | `data-agent-tool` anchors on the forms and controls tools act on, one `webmcp-tools` module (every tool imperative, with title + annotations), and a mount per framework. Gemini writes only the bodies of fetch / server-action tools, checked and repaired once. |
 | Validate | code | Every changed file must parse, and the module must follow the WebMCP guide's hard rules. |
 | Pull request | GitHub API | One commit on `agentronics/agent-nick-<run>`. The PR body lists every tool. |
 | CI checks | customer CI | `check_suite` webhook. One automatic fix attempt if CI fails. |
@@ -29,7 +29,9 @@ console (Vercel)  ──Clerk token──▶  agent-nick (Cloud Run)  ──▶ 
 
 **Supported frameworks today:** Next.js (App Router and Pages Router), React SPAs (Vite/CRA) and static HTML. Anything else stops after the framework step with a clear message.
 
-**Knowledge:** `apps/agent-nick/src/knowledge/` holds Google's modern-web-guidance WebMCP guides (Apache-2.0, pinned commit). The `sdk/` folder is empty until the SDK rebuild ships. Drop the SDK docs there, then run `pnpm --filter agent-nick knowledge:sync`. Every prompt then includes them, and codegen should switch to registering tools through the SDK.
+**Knowledge:** `apps/agent-nick/src/knowledge/` holds Google's modern-web-guidance WebMCP guides (Apache-2.0, pinned commit) and the Agentronics SDK pages that shape the code (tool management, procedural memory, authorization, auth, migration). Refresh the SDK pages after a docs change with `pnpm --filter agent-nick knowledge:sync --sdk-docs <SDK repo>/apps/docs/content/docs`.
+
+**Generated code follows the October 2026 WebMCP draft:** every tool is imperative (`document.modelContext.registerTool`, unregistered by `AbortSignal`) with a `title` and annotations. Forms get a `data-agent-tool` anchor and a tool that fills and submits them — the declarative `<form toolname>` API left the spec on 2026-10-08. The module adds no dependency; sites using the Agentronics SDK pass their client to `registerAgentronicsTools(pathname, signal, client)` so console rules, reviews and approved descriptions apply.
 
 ## One-time setup
 

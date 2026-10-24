@@ -202,7 +202,7 @@ describe("proposal rules", () => {
 });
 
 describe("codegen + validation", () => {
-  it("writes declarative attributes, a tools module and a layout mount that all parse", async () => {
+  it("writes anchors, one imperative tools module and a layout mount that all parse", async () => {
     const { reader, fw, digests } = await scan();
     const home = byRoute(digests, "/");
     const contact = byRoute(digests, "/contact");
@@ -226,12 +226,16 @@ describe("codegen + validation", () => {
     const out = await generateCode({ reader, fw, digests, tools, handlers });
 
     const get = (p: string) => out.changes.find((c) => c.path === p)?.content ?? "";
-    assert.match(get("app/page.tsx"), /<form \{\.\.\.\{ toolname: "search_products", tooldescription: "Does a thing\.", toolautosubmit: "" \}\} action="\/search"/);
-    assert.match(get("app/page.tsx"), /<input \{\.\.\.\{ toolparamdescription: "Words to search for, e\.g\. hiking boots" \}\} id="q"/);
+    // The declarative API left the WebMCP spec: forms get an anchor and an imperative tool.
+    assert.match(get("app/page.tsx"), /<form data-agent-tool="search_products" action="\/search"/);
+    assert.doesNotMatch(get("app/page.tsx"), /toolname|toolparamdescription/);
     assert.match(get("components/ContactForm.tsx"), /<form data-agent-tool="contact_us" onSubmit/);
     const mod = get("agentronics/webmcp-tools.ts");
     assert.match(mod, /import \{ addToCart \} from "\.\.\/app\/actions";/);
     assert.match(mod, /registerTool\(tool, \{ signal \}\)/);
+    assert.match(mod, /name: "search_products",\n\s+title: "Search products",/);
+    assert.match(mod, /return fillAndAct\("search_products", "\/", input, signal\);/);
+    assert.match(mod, /export function registerAgentronicsTools\(pathname: string, signal: AbortSignal, client\?: AgentronicsClientLike\)/);
     assert.match(mod, /"\^\/products\/\[\^\/\]\+\/\?\$"/);
     assert.match(get("app/layout.tsx"), /import \{ AgentronicsWebMcp \} from "\.\.\/agentronics\/AgentronicsWebMcp";/);
     assert.match(get("app/layout.tsx"), /\{children\}\n\s+<AgentronicsWebMcp \/>/);

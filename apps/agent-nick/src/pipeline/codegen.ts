@@ -1,10 +1,15 @@
-// Code generation. Almost all of it is deterministic: declarative attributes
-// on existing <form> tags, a data-agent-tool anchor for UI actions, one tools
-// module, and a mount point per framework. The model only writes the body of
-// tools that call an API or a server action (see handlers.ts).
+// Code generation. Almost all of it is deterministic: a data-agent-tool anchor
+// on the forms and controls agents use, one tools module registered with
+// document.modelContext.registerTool(), and a mount point per framework. The
+// model only writes the body of tools that call an API or a server action
+// (see handlers.ts).
+//
+// Every tool is imperative. The declarative form API (<form toolname>) was
+// removed from the WebMCP spec on 2026-10-08 and lives on only as an explainer,
+// so forms become tools that fill and submit the form.
 
 import ts from "typescript";
-import { CONTROL_TAG, parseSource } from "./extract.ts";
+import { parseSource } from "./extract.ts";
 import type { RepoReader } from "./repo.ts";
 import type { FileChange, Framework, PageDigest, ToolProposal } from "./types.ts";
 
@@ -40,14 +45,6 @@ function afterTagName(text: string, pos: number): number | null {
   return m ? pos + m[0].length : null;
 }
 
-/** JSX can't type unknown DOM attributes, so they go in as a spread (no excess-property check). */
-function jsxAttrs(attrs: Record<string, string>): string {
-  const body = Object.entries(attrs)
-    .map(([k, v]) => `${/^[a-z]+$/.test(k) ? k : JSON.stringify(k)}: ${JSON.stringify(v)}`)
-    .join(", ");
-  return ` {...{ ${body} }}`;
-}
-
 function markupAttrs(attrs: Record<string, string>): string {
   return Object.entries(attrs)
     .map(([k, v]) => (v === "" ? ` ${k}` : ` ${k}="${htmlAttr(v)}"`))
@@ -75,49 +72,6 @@ function importInsertPos(text: string, path: string): number {
   return pos;
 }
 
-function findJsxAt(sf: ts.SourceFile, pos: number): ts.JsxElement | ts.JsxSelfClosingElement | null {
-  let hit: ts.JsxElement | ts.JsxSelfClosingElement | null = null;
-  const visit = (n: ts.Node) => {
-    if (hit) return;
-    if ((ts.isJsxElement(n) && n.openingElement.getStart(sf) === pos) || (ts.isJsxSelfClosingElement(n) && n.getStart(sf) === pos)) {
-      hit = n as ts.JsxElement | ts.JsxSelfClosingElement;
-      return;
-    }
-    if (n.getStart(sf) <= pos && pos < n.getEnd()) n.forEachChild(visit);
-  };
-  visit(sf);
-  return hit;
-}
-
-/** Edits that put `toolparamdescription` on named controls inside the form at `formPos`. */
-function fieldDescriptionEdits(path: string, text: string, formPos: number, descriptions: Record<string, string>): Edit[] {
-  const edits: Edit[] = [];
-  if (isMarkup(path)) {
-    const end = text.indexOf("</form>", formPos);
-    const body = text.slice(formPos, end === -1 ? undefined : end);
-    for (const m of body.matchAll(/<(input|select|textarea)\b[^>]*\bname\s*=\s*["']([^"']+)["']/gi)) {
-      const d = m[2] ? descriptions[m[2]] : undefined;
-      if (d && m.index !== undefined) edits.push({ pos: formPos + m.index + 1 + (m[1]?.length ?? 0), insert: markupAttrs({ toolparamdescription: d }) });
-    }
-    return edits;
-  }
-  const sf = parseSource(path, text);
-  const form = findJsxAt(sf, formPos);
-  if (!form) return edits;
-  const visit = (n: ts.Node) => {
-    const o = ts.isJsxElement(n) ? n.openingElement : ts.isJsxSelfClosingElement(n) ? n : null;
-    if (o && CONTROL_TAG.test(o.tagName.getText(sf))) {
-      const nameAttr = o.attributes.properties.find((p): p is ts.JsxAttribute => ts.isJsxAttribute(p) && p.name.getText(sf) === "name");
-      const init = nameAttr?.initializer;
-      const name = init && ts.isStringLiteral(init) ? init.text : null;
-      const d = name ? descriptions[name] : undefined;
-      if (d) edits.push({ pos: o.tagName.getEnd(), insert: jsxAttrs({ toolparamdescription: d }) });
-    }
-    n.forEachChild(visit);
-  };
-  form.forEachChild(visit);
-  return edits;
-}
 
 /** Where generated files go: <app root>/src/agentronics or <app root>/agentronics. */
 function moduleDir(reader: RepoReader, fw: Framework): string {
@@ -172,15 +126,23 @@ async function fillAndAct(anchor: string, page: string, input: ToolInput, signal
 }
 `;
 
+/** "search_products" → "Search products" (WebMCP `title`, shown in browser UI). */
+export const toolTitle = (name: string) => {
+  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").split(/[_\-.\s]+/).filter(Boolean).join(" ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
 function toolLiteral(t: ToolProposal, execute: string): string {
   const annotations = [`readOnlyHint: ${t.readOnly}`, ...(t.consequential ? ["consequentialHint: true"] : [])].join(", ");
   return `  {
     pages: ${JSON.stringify([routeRegex(t.page)])},
     tool: {
       name: ${JSON.stringify(t.name)},
+      title: ${JSON.stringify(toolTitle(t.name))},
       description: ${JSON.stringify(t.description)},
       inputSchema: ${JSON.stringify(t.inputSchema, null, 2).replace(/\n/g, "\n      ")},
-      async execute(input: ToolInput, options?: { signal?: AbortSignal }): Promise<unknown> {
+      async execute(args: unknown, options?: { signal?: AbortSignal }): Promise<unknown> {
+        const input = (args ?? {}) as ToolInput;
         const signal = options?.signal ?? null;
 ${execute
   .trim()
@@ -198,30 +160,41 @@ export function toolsModule(tools: ToolProposal[], handlers: Record<string, Hand
   const entries = tools.map((t) =>
     toolLiteral(
       t,
-      t.strategy === "dom"
+      t.strategy === "dom" || t.strategy === "form"
         ? `return fillAndAct(${JSON.stringify(t.name)}, ${JSON.stringify(t.page === "*" ? "this site" : t.page)}, input, signal);`
         : (handlers[t.name]?.body ?? `return { error: "Not available." };`)
     )
   );
-  const needsDom = tools.some((t) => t.strategy === "dom");
+  const needsDom = tools.some((t) => t.strategy === "dom" || t.strategy === "form");
   return `// WebMCP tools for this site — generated by Agentronics Agent Nick.
 // Each tool is registered only on the pages it belongs to and unregistered
 // (via AbortSignal) when the visitor navigates away. Browsers without WebMCP
 // skip all of this. Spec: https://webmachinelearning.github.io/webmcp/
+//
+// Using the Agentronics SDK? Pass your client as the third argument of
+// registerAgentronicsTools() and the tools register through it, so the rules,
+// reviews and approved descriptions you manage in the console apply.
 ${imports.join("\n")}
 
 type ToolInput = Record<string, unknown>;
 
 interface ModelContextTool {
   name: string;
+  title?: string;
   description: string;
-  inputSchema: object;
-  execute(input: ToolInput, options?: { signal?: AbortSignal }): Promise<unknown> | unknown;
-  annotations?: { readOnlyHint?: boolean; consequentialHint?: boolean };
+  inputSchema: Record<string, unknown>;
+  execute(input: unknown, options?: { signal?: AbortSignal }): Promise<unknown> | unknown;
+  annotations?: { readOnlyHint?: boolean; consequentialHint?: boolean; untrustedContentHint?: boolean };
 }
 
 interface ModelContextLike {
   registerTool(tool: ModelContextTool, options?: { signal?: AbortSignal }): Promise<void> | void;
+}
+
+/** The part of an Agentronics SDK client this module needs (no import, no dependency). */
+export interface AgentronicsClientLike {
+  registerTool(tool: ModelContextTool): () => void;
+  publishToWebMcp(): unknown;
 }
 
 function modelContext(): ModelContextLike | null {
@@ -234,11 +207,20 @@ ${entries.join(",\n")}
 ];
 
 /** Register the tools that belong to \`pathname\`; abort \`signal\` to unregister them. */
-export function registerAgentronicsTools(pathname: string, signal: AbortSignal): void {
+export function registerAgentronicsTools(pathname: string, signal: AbortSignal, client?: AgentronicsClientLike): void {
+  const here = TOOLS.filter(({ pages }) => pages.some((p) => new RegExp(p).test(pathname)));
+  if (client) {
+    const offs = here.map(({ tool }) => client.registerTool(tool));
+    client.publishToWebMcp();
+    signal.addEventListener("abort", () => {
+      offs.forEach((off) => off());
+      client.publishToWebMcp();
+    }, { once: true });
+    return;
+  }
   const mc = modelContext();
   if (!mc) return;
-  for (const { pages, tool } of TOOLS) {
-    if (!pages.some((p) => new RegExp(p).test(pathname))) continue;
+  for (const { tool } of here) {
     void Promise.resolve(mc.registerTool(tool, { signal })).catch(() => undefined);
   }
 }
@@ -343,7 +325,7 @@ export async function generateCode(opts: {
   const buttons = new Map(digests.flatMap((d) => d.buttons.map((b) => [b.id, b] as const)));
   const actions = new Map(digests.flatMap((d) => d.serverActions.map((s) => [s.id, s] as const)));
 
-  // 1) Declarative form tools and UI anchors: attribute edits on existing files.
+  // 1) Anchors on the forms and controls that form / on-page tools act on.
   for (const t of tools) {
     if (t.strategy !== "form" && t.strategy !== "dom") continue;
     const target = forms.get(t.sourceId) ?? buttons.get(t.sourceId);
@@ -358,19 +340,11 @@ export async function generateCode(opts: {
       continue;
     }
     const markup = isMarkup(target.file);
-    if (t.strategy === "form") {
-      const attrs: Record<string, string> = { toolname: t.name, tooldescription: t.description };
-      if (t.readOnly) attrs.toolautosubmit = "";
-      addEdit(target.file, [{ pos: insertAt, insert: markup ? markupAttrs(attrs) : jsxAttrs(attrs) }]);
-      if (t.fieldDescriptions) addEdit(target.file, fieldDescriptionEdits(target.file, text, target.pos, t.fieldDescriptions));
-    } else {
-      addEdit(target.file, [{ pos: insertAt, insert: markup ? markupAttrs({ "data-agent-tool": t.name }) : ` data-agent-tool=${JSON.stringify(t.name)}` }]);
-    }
-    result.toolFiles[t.name] = target.file;
+    addEdit(target.file, [{ pos: insertAt, insert: markup ? markupAttrs({ "data-agent-tool": t.name }) : ` data-agent-tool=${JSON.stringify(t.name)}` }]);
   }
 
-  // 2) Script tools → one module, plus a mount point.
-  const scriptTools = tools.filter((t) => t.kind === "script" && !result.skipped.some((s) => s.name === t.name));
+  // 2) Every tool → one module, plus a mount point.
+  const scriptTools = tools.filter((t) => !result.skipped.some((s) => s.name === t.name));
   if (scriptTools.length) {
     const dir = moduleDir(reader, fw);
     const ext = fw.typescript ? "ts" : "js";

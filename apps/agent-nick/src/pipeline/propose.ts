@@ -11,7 +11,7 @@ const MAX_TOOLS = 40;
 const BATCH_CHARS = 24_000;
 
 const TASK = `You receive digests of a website's pages, extracted from its source code. Each digest lists the page route ("*" means site-wide components such as the header) and its actions, each with an id:
-- forms (f…): fields, submit text, and declarativeReady (true = native form whose inputs all have names, so the declarative WebMCP API works on it as-is)
+- forms (f…): fields, submit text, and declarativeReady (true = native form whose inputs all have names, so a tool can fill and submit it field by field)
 - buttons (b…): visible text and the onClick handler expression
 - calls (c…): HTTP calls the page makes (method + URL)
 - serverActions (s…): server functions the page can call (name + parameters)
@@ -20,7 +20,7 @@ Propose the WebMCP tools an AI agent acting for a visitor would actually use on 
 
 Rules:
 - Each tool wraps exactly one action: set sourceId to that action's id and page to the digest's route.
-- kind "form" (strategy "form") ONLY for a form with declarativeReady true. Everything else is kind "script" with strategy:
+- kind "form" (strategy "form") ONLY for a form with declarativeReady true — the tool fills its named fields and submits it. Everything else is kind "script" with strategy:
   "fetch" when a call (c…) performs the action against the site's own relative URL,
   "server_action" when a server action (s…) performs it,
   "dom" when the action only exists as UI (the tool fills inputs and clicks the element).
