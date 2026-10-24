@@ -254,6 +254,27 @@ export const sdkIngestKeys = pgTable(
   ]
 );
 
+// Browser-safe publishable keys (agtx_pk_…) for the SDK's public API
+// (/v1/pub/*): policy + site-memory sync, tool registry, traces, health.
+// Public by design, so the key itself is stored. Writes are only accepted
+// from the key's allowed origins; with none set, the key is read-only.
+export const sdkPublishableKeys = pgTable(
+  "sdk_publishable_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull().default("default"),
+    allowedOrigins: jsonb("allowed_origins").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true })
+  },
+  (t) => [uniqueIndex("sdk_publishable_keys_key_uq").on(t.key), index("sdk_publishable_keys_tenant_idx").on(t.tenantId)]
+);
+
 // Append-only raw event log. PK = SDK-provided event id → idempotent ingest.
 export const sdkEvents = pgTable(
   "sdk_events",

@@ -1,5 +1,5 @@
 {
-  "id": "bf8da4e3-b78c-4609-b7d7-240df916c240",
+  "id": "50b46a1d-9a38-4a90-b5bd-25144a25d1e1",
   "prevId": "ddb64b19-d37e-4ca7-8e4d-8a561052edc8",
   "version": "7",
   "dialect": "postgresql",
@@ -2740,6 +2740,116 @@
         "sdk_policies_tenant_id_tenants_id_fk": {
           "name": "sdk_policies_tenant_id_tenants_id_fk",
           "tableFrom": "sdk_policies",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sdk_publishable_keys": {
+      "name": "sdk_publishable_keys",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
+        "allowed_origins": {
+          "name": "allowed_origins",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "sdk_publishable_keys_key_uq": {
+          "name": "sdk_publishable_keys_key_uq",
+          "columns": [
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sdk_publishable_keys_tenant_idx": {
+          "name": "sdk_publishable_keys_tenant_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sdk_publishable_keys_tenant_id_tenants_id_fk": {
+          "name": "sdk_publishable_keys_tenant_id_tenants_id_fk",
+          "tableFrom": "sdk_publishable_keys",
           "tableTo": "tenants",
           "columnsFrom": [
             "tenant_id"

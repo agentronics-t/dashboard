@@ -3,6 +3,7 @@ import { Badge, Card, CardTitle, Kpi, PageHeader, fmt } from "@/components/ui";
 import { EventFeed, SdkEmpty } from "@/components/sdk";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { getFilteredEvents, getLatency, getSessions, type EventFilters } from "@/lib/pillars";
+import { getWorkspacePlan } from "@/lib/billing";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -40,11 +41,17 @@ export default async function ObservabilityPage({ searchParams }: { searchParams
   if (sp.session) filters.session = sp.session.slice(0, 200);
 
   const tenantId = await getTenantId();
-  const [events, sessions, latency] = await Promise.all([
+  const [events, sessions, latency, { spec: plan }] = await Promise.all([
     getFilteredEvents(tenantId, filters, 200),
     getSessions(tenantId, 7, 20),
-    getLatency(tenantId, 7)
+    getLatency(tenantId, 7),
+    getWorkspacePlan(tenantId)
   ]);
+  const exportQuery = new URLSearchParams(
+    Object.entries({ type: filters.type, outcome: filters.outcome, class: filters.agentClass, tool: filters.tool, session: filters.session }).filter(
+      (e): e is [string, string] => typeof e[1] === "string"
+    )
+  ).toString();
   const filtered = Object.keys(filters).length > 0;
 
   return (
@@ -142,6 +149,15 @@ export default async function ObservabilityPage({ searchParams }: { searchParams
                 {filtered && (
                   <Link className="ag-btn ag-btn-sm" href="/logs">
                     Clear
+                  </Link>
+                )}
+                {plan.features.auditAndTraceExport ? (
+                  <a className="ag-btn ag-btn-sm" href={`/logs/export${exportQuery ? `?${exportQuery}` : ""}`}>
+                    Export CSV
+                  </a>
+                ) : (
+                  <Link className="ag-btn ag-btn-sm" href="/account" title="Raw trace export is part of Enterprise">
+                    Export (Enterprise)
                   </Link>
                 )}
               </form>

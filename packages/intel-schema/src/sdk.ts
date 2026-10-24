@@ -25,6 +25,28 @@ export function isIngestKey(token: string): boolean {
   return token.startsWith(SDK_INGEST_KEY_PREFIX);
 }
 
+// Browser-safe publishable keys for the SDK's public API (/v1/pub/*).
+export const SDK_PUBLISHABLE_KEY_PREFIX = "agtx_pk_";
+
+export function generatePublishableKey(): string {
+  return SDK_PUBLISHABLE_KEY_PREFIX + "live_" + randomBytes(18).toString("base64url");
+}
+
+export function isPublishableKey(token: string): boolean {
+  return token.startsWith(SDK_PUBLISHABLE_KEY_PREFIX);
+}
+
+/** "https://Shop.example/" → "https://shop.example"; null if it isn't an http(s) origin. */
+export function normaliseOrigin(value: string): string | null {
+  try {
+    const u = new URL(value.trim());
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
 export const TRACE_EVENT_TYPES = [
   "agent.detected",
   "agent.missed",

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createDb, schema } from "@agentronics/intel-schema/db";
 import { AuthError, clerkVerifier } from "./auth.ts";
 import { buildServer } from "./server.ts";
@@ -641,4 +641,63 @@ test("POST /v1/sdk/agent-keys/verify checks console-minted keys live (revocation
 
   await db.update(schema.agentKeys).set({ revokedAt: new Date() }).where(eq(schema.agentKeys.id, row!.id));
   assert.deepEqual((await verify(key)).json(), { valid: false });
+});
+
+// ---- public browser API (/v1/pub, publishable keys) -----------------------
+
+test("public API: publishable key reads config with ETag + CORS, writes only from allowed origins", async () => {
+  const tenantId = (await tenantRow()).id;
+  const pk = `agtx_pk_live_${randomUUID().replace(/-/g, "")}`;
+  await db.insert(schema.sdkPublishableKeys).values({ tenantId, key: pk, allowedOrigins: ["https://shop.example"] });
+  const auth = { authorization: `Bearer ${pk}` };
+
+  assert.equal((await app.inject({ method: "GET", url: "/v1/pub/health" })).statusCode, 401);
+  assert.equal((await app.inject({ method: "GET", url: "/v1/pub/health", headers: { authorization: "Bearer agtx_pk_nope" } })).statusCode, 401);
+  assert.deepEqual((await app.inject({ method: "GET", url: "/v1/pub/health", headers: auth })).json(), { status: "ok", service: "agentronics-api" });
+
+  // reads: policies (same rules as /v1/sdk/config), CORS for any origin, ETag → 304
+  const pol = await app.inject({ method: "GET", url: "/v1/pub/sites/shop-acme/policies", headers: { ...auth, origin: "https://anything.example" } });
+  assert.equal(pol.statusCode, 200);
+  assert.equal(pol.headers["access-control-allow-origin"], "https://anything.example");
+  assert.deepEqual(pol.json().policies.map((p: { tool: string }) => p.tool), ["checkout", "*"]);
+  const again = await app.inject({ method: "GET", url: "/v1/pub/sites/shop-acme/policies", headers: { ...auth, "if-none-match": String(pol.headers.etag) } });
+  assert.equal(again.statusCode, 304);
+  const cfg = await app.inject({ method: "GET", url: "/v1/pub/sites/shop-acme/config", headers: auth });
+  assert.deepEqual(cfg.json().toolDescriptions, { search: "Search products by keyword." });
+
+  // preflight
+  const pre = await app.inject({ method: "OPTIONS", url: "/v1/pub/traces", headers: { origin: "https://shop.example", "access-control-request-method": "POST" } });
+  assert.equal(pre.statusCode, 204);
+  assert.match(String(pre.headers["access-control-allow-headers"]), /authorization/);
+
+  // writes: wrong / missing origin refused; allowed origin accepted
+  const event = { id: `evt_${randomUUID()}`, siteId: "shop-acme", sessionId: "s", occurredAt: new Date().toISOString(), type: "agent.detected", outcome: "success", metadata: {} };
+  assert.equal((await app.inject({ method: "POST", url: "/v1/pub/traces", headers: auth, payload: { events: [event] } })).statusCode, 403);
+  assert.equal((await app.inject({ method: "POST", url: "/v1/pub/traces", headers: { ...auth, origin: "https://evil.example" }, payload: { events: [event] } })).statusCode, 403);
+  const ok = await app.inject({ method: "POST", url: "/v1/pub/traces", headers: { ...auth, origin: "https://shop.example" }, payload: { events: [event] } });
+  assert.equal(ok.statusCode, 202);
+  assert.equal(ok.json().accepted, 1);
+
+  const tools = await app.inject({
+    method: "PUT",
+    url: "/v1/pub/sites/shop-acme/tools",
+    headers: { ...auth, origin: "https://shop.example" },
+    payload: { registry: { tools: [{ name: "track_order", description: "Track an order.", tokens: 12 }] } }
+  });
+  assert.equal(tools.statusCode, 202);
+  const [row] = await db
+    .select({ name: schema.sdkToolRegistry.toolName })
+    .from(schema.sdkToolRegistry)
+    .where(and(eq(schema.sdkToolRegistry.tenantId, tenantId), eq(schema.sdkToolRegistry.toolName, "track_order")));
+  assert.equal(row?.name, "track_order");
+});
+
+test("public API: a revoked publishable key stops working", async () => {
+  const tenantId = (await tenantRow()).id;
+  const pk = `agtx_pk_live_${randomUUID().replace(/-/g, "")}`;
+  const local = buildServer({ db, auth: clerkVerifier({ issuer: ISSUER, getKey: jwkSet }) });
+  await local.ready();
+  await db.insert(schema.sdkPublishableKeys).values({ tenantId, key: pk, revokedAt: new Date() });
+  assert.equal((await local.inject({ method: "GET", url: "/v1/pub/health", headers: { authorization: `Bearer ${pk}` } })).statusCode, 401);
+  await local.close();
 });
