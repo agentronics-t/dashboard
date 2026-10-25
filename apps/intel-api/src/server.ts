@@ -32,6 +32,7 @@ import {
 import { registerIntelligenceRoutes, type IntelligenceDeps } from "./intelligence.ts";
 import { endRequestSpan, startRequestSpan } from "./otel.ts";
 import { registerPublicRoutes } from "./public.ts";
+import { deliverWebhooks } from "./webhooks.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -419,7 +420,7 @@ export function buildServer(deps: ServerDeps) {
       "/v1/sdk/config",
       "/v1/sdk/agent-keys/verify"
     ];
-    const INTERNAL_PATHS = ["/v1/maintenance/prune", ...(intelligence ? ["/v1/imports"] : [])];
+    const INTERNAL_PATHS = ["/v1/maintenance/prune", "/v1/maintenance/webhooks", ...(intelligence ? ["/v1/imports"] : [])];
     api.addHook("preHandler", async (req, reply) => {
       if (req.internal && !(req.method === "POST" && INTERNAL_PATHS.includes(req.url))) {
         return reply.status(403).send({ error: "internal_caller_restricted" });
@@ -465,6 +466,13 @@ export function buildServer(deps: ServerDeps) {
         pruned_events: pruned.length
       };
       req.log.info(result, "prune complete");
+      return result;
+    });
+
+    // ---- webhook export (Cloud Scheduler, every minute; internal callers only)
+    api.post("/v1/maintenance/webhooks", async (req) => {
+      const result = await deliverWebhooks(db, tenantPlan, { now: now() });
+      if (result.endpoints) req.log.info(result, "webhooks delivered");
       return result;
     });
 

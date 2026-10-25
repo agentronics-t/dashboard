@@ -450,11 +450,16 @@ test("without intelligence deps, connector/import/job routes do not exist", asyn
   }
 });
 
-test("prune is internal-only: a Clerk session and an ingest key are both 403", async () => {
-  for (const authorization of [`Bearer ${token}`, `Bearer ${ingestKey}`]) {
-    const res = await app.inject({ method: "POST", url: "/v1/maintenance/prune", headers: { authorization } });
-    assert.equal(res.statusCode, 403);
+test("maintenance is internal-only: a Clerk session and an ingest key are both 403", async () => {
+  for (const url of ["/v1/maintenance/prune", "/v1/maintenance/webhooks"]) {
+    for (const authorization of [`Bearer ${token}`, `Bearer ${ingestKey}`]) {
+      const res = await app.inject({ method: "POST", url, headers: { authorization } });
+      assert.equal(res.statusCode, 403, url);
+    }
   }
+  const res = await app.inject({ method: "POST", url: "/v1/maintenance/webhooks", headers: { authorization: "Bearer internal-svc-token" } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(typeof res.json().delivered_events, "number");
 });
 
 test("prune (internal) deletes sdk_events past the retention window, keeps recent", async () => {

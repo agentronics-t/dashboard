@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { generateIngestKey, generatePublishableKey, normaliseOrigin } from "@agentronics/intel-schema";
 import { schema } from "@agentronics/intel-schema/db";
+import { generateWebhookSecret, postWebhook, webhookUrlProblem } from "@agentronics/intel-schema/webhooks";
+import { getWorkspacePlan } from "@/lib/billing";
 import { db, getTenantId, requireWorkspaceAdmin } from "@/lib/tenant";
 
 /** Mint a new SDK ingest key. The raw key is returned exactly once. */
@@ -72,4 +74,67 @@ export async function revokePublishableKey(id: string): Promise<void> {
     .set({ revokedAt: new Date() })
     .where(and(eq(schema.sdkPublishableKeys.id, String(id)), eq(schema.sdkPublishableKeys.tenantId, tenantId)));
   revalidatePath("/settings");
+}
+
+// ---- webhook export (Pro+) -------------------------------------------------
+
+async function webhookWorkspace(): Promise<string> {
+  await requireWorkspaceAdmin();
+  const tenantId = await getTenantId();
+  const { spec } = await getWorkspacePlan(tenantId);
+  if (!spec.features.webhookExport) throw new Error(`Webhooks aren't included in the ${spec.name} plan.`);
+  return tenantId;
+}
+
+/**
+ * Point webhook export at a URL. Saving also switches a paused endpoint back
+ * on. Delivery starts with events from now; the secret is kept across edits.
+ */
+export async function saveWebhook(rawUrl: string): Promise<{ error?: string }> {
+  const tenantId = await webhookWorkspace();
+  const url = String(rawUrl ?? "").trim();
+  // Returned, not thrown: production hides thrown server-action messages.
+  const problem = webhookUrlProblem(url);
+  if (problem) return { error: problem };
+  const at = new Date();
+  await db()
+    .insert(schema.sdkWebhooks)
+    .values({ tenantId, url, secret: generateWebhookSecret(), cursorAt: at, nextAttemptAt: at })
+    .onConflictDoUpdate({
+      target: schema.sdkWebhooks.tenantId,
+      set: { url, enabled: true, failures: 0, nextAttemptAt: at, lastStatus: null }
+    });
+  revalidatePath("/settings");
+  return {};
+}
+
+export async function deleteWebhook(): Promise<void> {
+  const tenantId = await webhookWorkspace();
+  await db().delete(schema.sdkWebhooks).where(eq(schema.sdkWebhooks.tenantId, tenantId));
+  revalidatePath("/settings");
+}
+
+/** The signing secret, for admins only (it's needed to verify deliveries). */
+export async function revealWebhookSecret(): Promise<string> {
+  const tenantId = await webhookWorkspace();
+  const [row] = await db().select({ secret: schema.sdkWebhooks.secret }).from(schema.sdkWebhooks).where(eq(schema.sdkWebhooks.tenantId, tenantId));
+  if (!row) throw new Error("Add an endpoint first.");
+  return row.secret;
+}
+
+export async function rotateWebhookSecret(): Promise<string> {
+  const tenantId = await webhookWorkspace();
+  const secret = generateWebhookSecret();
+  await db().update(schema.sdkWebhooks).set({ secret }).where(eq(schema.sdkWebhooks.tenantId, tenantId));
+  return secret;
+}
+
+/** Send one signed `webhook.test` delivery now and report what came back. */
+export async function sendTestWebhook(): Promise<{ ok: boolean; status: string }> {
+  const tenantId = await webhookWorkspace();
+  const [row] = await db().select().from(schema.sdkWebhooks).where(eq(schema.sdkWebhooks.tenantId, tenantId));
+  if (!row) throw new Error("Add an endpoint first.");
+  const id = `msg_test_${Date.now()}`;
+  const body = JSON.stringify({ type: "webhook.test", timestamp: new Date().toISOString(), data: { message: "Agentronics webhook test" } });
+  return postWebhook(row.url, row.secret, id, body);
 }

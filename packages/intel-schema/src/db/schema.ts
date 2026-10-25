@@ -304,7 +304,9 @@ export const sdkEvents = pgTable(
   (t) => [
     index("sdk_events_tenant_occurred_idx").on(t.tenantId, t.occurredAt),
     index("sdk_events_tenant_type_idx").on(t.tenantId, t.type, t.occurredAt),
-    index("sdk_events_tenant_site_idx").on(t.tenantId, t.siteId)
+    index("sdk_events_tenant_site_idx").on(t.tenantId, t.siteId),
+    // Webhook export walks events in this order (see sdk_webhooks).
+    index("sdk_events_tenant_ingested_idx").on(t.tenantId, t.ingestedAt, t.id)
   ]
 );
 
@@ -729,4 +731,23 @@ export const workspacePlans = pgTable("workspace_plans", {
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   billingInterval: text("billing_interval").notNull().default("month"), // month | year
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+// Webhook export (Pro+): one HTTPS endpoint per workspace. intel-api delivers
+// SDK events to it in batches (Standard Webhooks signatures), walking
+// sdk_events in (ingested_at, id) order from the cursor below, so no outbox.
+export const sdkWebhooks = pgTable("sdk_webhooks", {
+  tenantId: uuid("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  secret: text("secret").notNull(), // whsec_<base64>, signs every delivery
+  enabled: boolean("enabled").notNull().default(true),
+  cursorAt: timestamp("cursor_at", { withTimezone: true }).notNull().defaultNow(),
+  cursorId: text("cursor_id").notNull().default(""),
+  failures: integer("failures").notNull().default(0), // consecutive
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lastStatus: text("last_status"), // "200" | "timeout" | "blocked address" | …
+  lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });

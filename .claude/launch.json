@@ -4,8 +4,27 @@
     {
       "name": "dashboard",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "dashboard", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "dashboard",
+        "dev"
+      ],
       "port": 3001
+    },
+    {
+      "name": "dashboard-scratch",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATABASE_URL=postgres://postgres@127.0.0.1:54329/intel",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=",
+        "CLERK_SECRET_KEY=",
+        "pnpm",
+        "dev",
+        "--port",
+        "3011"
+      ],
+      "port": 3011,
+      "cwd": "apps/dashboard"
     }
   ]
 }
