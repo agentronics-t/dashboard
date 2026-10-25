@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { acceptRun, rerunSite } from "@/app/(app)/agent-nick/actions";
+import { acceptRun, rerunSite } from "@/app/(app)/agent-nic/actions";
 
 /** "Accept" merges the PR on GitHub (branch protection still applies). */
 export function AcceptButton({ runId }: { runId: string }) {
@@ -43,7 +43,7 @@ export function RerunButton({ siteId, label = "Run again", primary = false }: { 
           start(async () => {
             setError(null);
             const res = await rerunSite(siteId);
-            if (res.ok) router.push(`/agent-nick/runs/${res.runId}`);
+            if (res.ok) router.push(`/agent-nic/runs/${res.runId}`);
             else setError(res.error);
           })
         }

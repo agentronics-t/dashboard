@@ -33,7 +33,7 @@ export async function listRepos(): Promise<ActionResult<{ repos: RepoOption[] }>
   return guard(async (tenantId) => nickFetch<{ repos: RepoOption[] }>("/v1/github/repos", { tenantId }));
 }
 
-/** Hand a repo to Agent Nick and start the first run. */
+/** Hand a repo to Agent Nic and start the first run. */
 export async function startOnRepo(installationId: number, repoId: number): Promise<ActionResult<{ runId: string }>> {
   return guard(async (tenantId) => {
     const { siteId } = await nickFetch<{ siteId: string }>("/v1/sites", { method: "POST", body: { installationId, repoId }, tenantId });
@@ -45,7 +45,7 @@ export async function startOnRepo(installationId: number, repoId: number): Promi
 async function startRun(siteId: string, tenantId: string): Promise<{ runId: string }> {
   try {
     const out = await nickFetch<{ runId: string }>(`/v1/sites/${siteId}/runs`, { method: "POST", tenantId });
-    revalidatePath("/agent-nick");
+    revalidatePath("/agent-nic");
     return out;
   } catch (err) {
     if (err instanceof NickError && err.code === "run_in_progress" && typeof err.data.runId === "string") return { runId: err.data.runId };
@@ -66,7 +66,7 @@ export async function submitReview(
 ): Promise<ActionResult> {
   return guard(async (tenantId) => {
     await nickFetch(`/v1/runs/${runId}/review`, { method: "POST", body: { tools, ...site }, tenantId });
-    revalidatePath(`/agent-nick/runs/${runId}`);
+    revalidatePath(`/agent-nic/runs/${runId}`);
     return {};
   });
 }
@@ -74,7 +74,7 @@ export async function submitReview(
 export async function cancelRun(runId: string): Promise<ActionResult> {
   return guard(async (tenantId) => {
     await nickFetch(`/v1/runs/${runId}/cancel`, { method: "POST", tenantId });
-    revalidatePath(`/agent-nick/runs/${runId}`);
+    revalidatePath(`/agent-nic/runs/${runId}`);
     return {};
   });
 }
@@ -83,8 +83,8 @@ export async function cancelRun(runId: string): Promise<ActionResult> {
 export async function acceptRun(runId: string): Promise<ActionResult> {
   return guard(async (tenantId) => {
     await nickFetch(`/v1/runs/${runId}/merge`, { method: "POST", tenantId });
-    revalidatePath(`/agent-nick/runs/${runId}`);
-    revalidatePath("/agent-nick");
+    revalidatePath(`/agent-nic/runs/${runId}`);
+    revalidatePath("/agent-nic");
     return {};
   });
 }

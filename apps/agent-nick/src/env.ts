@@ -14,7 +14,7 @@ const envSchema = z.object({
   CLERK_ISSUER: z.string().url(),
   CLERK_JWKS_URL: z.string().url(),
 
-  // GitHub App (Agent Nick). The private key is the PEM GitHub generates;
+  // GitHub App (Agent Nic). The private key is the PEM GitHub generates;
   // newlines may be escaped as \n when stored in a single-line secret.
   GITHUB_APP_ID: z.string().min(1),
   GITHUB_APP_SLUG: z.string().min(1),

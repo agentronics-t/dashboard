@@ -1,4 +1,4 @@
-// The Agent Nick pipeline drawn from the run's event log: one node per step,
+// The Agent Nic pipeline drawn from the run's event log: one node per step,
 // coloured by state, with the step's latest message underneath.
 import type { Run, RunEvent } from "@/lib/agentNick";
 
@@ -49,7 +49,7 @@ export function stepStates(run: Run, events: RunEvent[]): Record<string, { state
 export function Pipeline({ run, events }: { run: Run; events: RunEvent[] }) {
   const states = stepStates(run, events);
   return (
-    <ol className="ag-flow" aria-label="Agent Nick pipeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+    <ol className="ag-flow" aria-label="Agent Nic pipeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
       {STEPS.map((s, i) => {
         const st = states[s.id] ?? { state: "pending" as State, detail: null };
         return (

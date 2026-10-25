@@ -1,6 +1,6 @@
 // Compiles src/knowledge/**/*.md into src/knowledge/pack.generated.ts.
 // `--pull <ref>` first re-downloads Google's WebMCP guides at that git ref.
-// `--sdk-docs <dir>` first copies the Agentronics SDK pages Agent Nick needs
+// `--sdk-docs <dir>` first copies the Agentronics SDK pages Agent Nic needs
 // from the SDK repo's docs (apps/docs/content/docs), stripped of MDX components.
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
@@ -20,7 +20,7 @@ if (pull !== -1) {
   }
 }
 
-// The SDK pages that shape the code Agent Nick writes — kept short on purpose:
+// The SDK pages that shape the code Agent Nic writes — kept short on purpose:
 // every page is in every prompt.
 const SDK_PAGES = [
   "concepts/tool-management.mdx",

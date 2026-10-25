@@ -1,7 +1,7 @@
-# Agent Nick
+# Agent Nic
 
-Agent Nick makes a customer's website agent-ready. They connect GitHub and pick
-their repo. Agent Nick reads the code, proposes WebMCP tools for its pages and
+Agent Nic makes a customer's website agent-ready. They connect GitHub and pick
+their repo. Agent Nic reads the code, proposes WebMCP tools for its pages and
 the site files it's missing (llms.txt, sitemap, structured data), and after one
 review (tools, who may use them, site files + address, plan + payment) opens a
 pull request that adds them. The customer's CI checks it, they accept it in the console,
@@ -60,7 +60,7 @@ console (Vercel)  ──Clerk token──▶  agent-nick (Cloud Run)  ──▶ 
 4. **Dodo Payments.** Plans and limits live in `packages/intel-schema/src/plans.ts` (Free / Starter $19 / Pro $49 / Enterprise). Full payment setup: `to_do_finally.md` → Payments.
    - **Products:** create two monthly subscription products: Starter $19 and Pro $49.
    - **Webhook:** add one pointing at `https://app.agentronics.dev/api/dodo/webhook` for the `subscription.*` events.
-5. **Database.** Apply migration `0005_agent_nick` to production **before** the console with Agent Nick deploys:
+5. **Database.** Apply migration `0005_agent_nick` to production **before** the console with Agent Nic deploys:
    ```bash
    pnpm --filter @agentronics/intel-schema db:migrate
    ```

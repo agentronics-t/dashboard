@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { listRepos, startOnRepo, type RepoOption } from "@/app/(app)/agent-nick/actions";
+import { listRepos, startOnRepo, type RepoOption } from "@/app/(app)/agent-nic/actions";
 
-/** Every repo the GitHub App can see; pick one and Agent Nick starts on it. */
+/** Every repo the GitHub App can see; pick one and Agent Nic starts on it. */
 export function RepoPicker({ manageLinks }: { manageLinks: { label: string; href: string }[] }) {
   const router = useRouter();
   const [repos, setRepos] = useState<RepoOption[] | null>(null);
@@ -36,7 +36,7 @@ export function RepoPicker({ manageLinks }: { manageLinks: { label: string; href
     setError(null);
     start(async () => {
       const res = await startOnRepo(r.installationId, r.id);
-      if (res.ok) router.push(`/agent-nick/runs/${res.runId}`);
+      if (res.ok) router.push(`/agent-nic/runs/${res.runId}`);
       else {
         setError(res.error);
         setBusy(null);
@@ -79,12 +79,12 @@ export function RepoPicker({ manageLinks }: { manageLinks: { label: string; href
               {r.description && <div className="ag-muted" style={{ fontSize: 12.5, marginTop: 2, overflowWrap: "anywhere" }}>{r.description}</div>}
             </div>
             {r.siteId ? (
-              <Link className="ag-btn ag-btn-sm" href={`/agent-nick/sites/${r.siteId}`}>
+              <Link className="ag-btn ag-btn-sm" href={`/agent-nic/sites/${r.siteId}`}>
                 Open
               </Link>
             ) : (
               <button className="ag-btn ag-btn-sm ag-btn-primary" disabled={busy !== null} onClick={() => go(r)}>
-                {busy === r.id ? "Starting…" : "Start Agent Nick"}
+                {busy === r.id ? "Starting…" : "Start Agent Nic"}
               </button>
             )}
           </div>

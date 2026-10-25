@@ -1,4 +1,4 @@
-// Minimal GitHub REST client for the Agent Nick GitHub App — fetch only, no
+// Minimal GitHub REST client for the Agent Nic GitHub App — fetch only, no
 // git binary and no clone: we read trees/blobs and write blobs → tree → commit
 // → ref → pull request through the API.
 

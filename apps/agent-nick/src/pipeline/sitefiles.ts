@@ -226,7 +226,7 @@ export function renderSitemapXml(url: string, routes: string[]): string {
   const xmlEsc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<!-- Added by Agentronics Agent Nick: every static page, for search engines and AI agents. -->`,
+    `<!-- Added by Agentronics Agent Nic: every static page, for search engines and AI agents. -->`,
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`,
     ...routes.map((r) => `  <url><loc>${xmlEsc(`${url}${r === "/" ? "/" : r}`)}</loc></url>`),
     `</urlset>`,
@@ -237,7 +237,7 @@ export function renderSitemapXml(url: string, routes: string[]): string {
 function nextSitemapModule(url: string, routes: string[], typescript: boolean): string {
   const source = `import type { MetadataRoute } from "next";
 
-// Added by Agentronics Agent Nick: every static page, for search engines and AI agents.
+// Added by Agentronics Agent Nic: every static page, for search engines and AI agents.
 // Set NEXT_PUBLIC_SITE_URL to change the address.
 const BASE = (process.env.NEXT_PUBLIC_SITE_URL ?? ${JSON.stringify(url)}).replace(/\\/+$/, "");
 const ROUTES = ${JSON.stringify(routes)};
@@ -271,7 +271,7 @@ function structuredComponent(data: Record<string, unknown>, fw: Framework): stri
     fw.kind === "next-pages"
       ? `import Head from "next/head";
 
-// Who this site is, as schema.org data that agents and search engines read — added by Agentronics Agent Nick.
+// Who this site is, as schema.org data that agents and search engines read — added by Agentronics Agent Nic.
 const DATA = ${json};
 
 export function AgentronicsStructuredData() {
@@ -282,7 +282,7 @@ export function AgentronicsStructuredData() {
   );
 }
 `
-      : `// Who this site is, as schema.org data that agents and search engines read — added by Agentronics Agent Nick.
+      : `// Who this site is, as schema.org data that agents and search engines read — added by Agentronics Agent Nic.
 const DATA = ${json};
 
 export function AgentronicsStructuredData() {

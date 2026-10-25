@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logomark } from "./Logomark";
 
-// Agent Nick sits above the SDK pillars: it's where a site gets its WebMCP tools.
-const AGENT_NAV = [{ href: "/agent-nick", label: "Agent Nick", icon: "bot" }];
+// Agent Nic sits above the SDK pillars: it's where a site gets its WebMCP tools.
+const AGENT_NAV = [{ href: "/agent-nic", label: "Agent Nic", icon: "bot" }];
 
 // Agentronics is one product now — the SDK and the dashboard it feeds.
 // Fed by events streamed to the intel-api SDK ingest endpoint; each page

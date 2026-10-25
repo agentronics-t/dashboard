@@ -68,12 +68,12 @@ export default async function RunPage({ params, searchParams }: { params: Promis
   return (
     <>
       <div style={{ marginBottom: 10 }}>
-        <Link href={`/agent-nick/sites/${site.id}`} className="ag-muted" style={{ fontSize: 13 }}>
+        <Link href={`/agent-nic/sites/${site.id}`} className="ag-muted" style={{ fontSize: 13 }}>
           ← {site.repoFullName}
         </Link>
       </div>
       <PageHeader
-        title={run.status === "awaiting_review" ? (tools.length ? "Review the proposed tools" : "Review the site files") : "Agent Nick run"}
+        title={run.status === "awaiting_review" ? (tools.length ? "Review the proposed tools" : "Review the site files") : "Agent Nic run"}
         subtitle={`${site.repoFullName}${run.framework ? ` · ${run.framework}` : ""} · started ${timeAgo(run.createdAt)}${run.costUsd > 0 ? ` · model cost $${run.costUsd.toFixed(3)}` : ""}`}
         action={
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -132,7 +132,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
                 <strong style={{ color: run.ciStatus === "success" ? "var(--success)" : run.ciStatus === "failure" ? "var(--danger)" : "var(--content-secondary)" }}>
                   {run.ciStatus === "success" ? "passing" : run.ciStatus === "failure" ? "failing" : run.ciStatus === "none" ? "no checks" : "running"}
                 </strong>
-                {run.fixAttempts > 0 && <span className="ag-muted"> · Agent Nick pushed {run.fixAttempts} fix</span>}
+                {run.fixAttempts > 0 && <span className="ag-muted"> · Agent Nic pushed {run.fixAttempts} fix</span>}
               </div>
             </div>
             <AcceptButton runId={run.id} />
@@ -145,7 +145,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
           <CardTitle>Live</CardTitle>
           <p style={{ margin: 0 }}>
             {shipped || "The changes"} {shipped.includes(",") || run.toolsApproved > 1 ? "were" : "was"} merged {timeAgo(run.mergedAt)}. They go live with your next deploy.{" "}
-            <Link className="ag-link" href={`/agent-nick/sites/${site.id}`}>
+            <Link className="ag-link" href={`/agent-nic/sites/${site.id}`}>
               See the site
             </Link>
           </p>
@@ -162,7 +162,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
 
       {dryRun?.files && (
         <Card style={{ marginBottom: 18 }}>
-          <CardTitle>Dry run — files Agent Nick would commit</CardTitle>
+          <CardTitle>Dry run — files Agent Nic would commit</CardTitle>
           {dryRun.files.map((f) => (
             <details key={f.path} style={{ borderTop: "1px solid var(--border)", padding: "8px 0" }}>
               <summary className="ag-mono" style={{ cursor: "pointer", fontSize: 13 }}>{f.path}</summary>

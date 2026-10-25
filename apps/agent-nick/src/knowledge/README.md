@@ -1,4 +1,4 @@
-# Agent Nick knowledge pack
+# Agent Nic knowledge pack
 
 What the model is told about WebMCP and our SDK. It is compiled into
 `pack.generated.ts` by `pnpm knowledge:sync` (run it after changing anything

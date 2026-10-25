@@ -9,14 +9,15 @@ export const dynamic = "force-dynamic";
 
 async function getProfile() {
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
-    return { name: "Demo workspace", email: "demo@agentronics.dev", clerk: false };
+    return { name: "Demo user", email: "demo@agentronics.dev", workspace: "Demo workspace" };
   }
-  const { currentUser } = await import("@clerk/nextjs/server");
-  const user = await currentUser();
+  const { auth, currentUser } = await import("@clerk/nextjs/server");
+  const [user, { orgSlug }] = await Promise.all([currentUser(), auth()]);
   return {
     name: user?.fullName || user?.username || "—",
     email: user?.primaryEmailAddress?.emailAddress || "—",
-    clerk: true
+    // An organization's workspace is shared with its members; otherwise it's yours alone.
+    workspace: orgSlug ? `Team (${orgSlug})` : "Personal"
   };
 }
 
@@ -63,8 +64,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
           <Meter label="Agent requests recorded" used={usage.requests} limit={l.requestsPerMonth} sub="this month · agents are never blocked" />
-          <Meter label="Agent Nick runs" used={usage.runs} limit={l.agentNickRunsPerMonth} sub="this month" />
-          <Meter label="Agent Nick sites" used={usage.sites} limit={l.agentNickSites} sub="connected repositories" />
+          <Meter label="Agent Nic runs" used={usage.runs} limit={l.agentNickRunsPerMonth} sub="this month" />
+          <Meter label="Agent Nic sites" used={usage.sites} limit={l.agentNickSites} sub="connected repositories" />
           <Meter label="History kept" text={l.retentionDays === null ? "Custom" : `${l.retentionDays} days`} sub="raw events" />
         </div>
       </Card>
@@ -78,8 +79,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         <CardTitle>Profile</CardTitle>
         <Row label="Name" value={profile.name} />
         <Row label="Email" value={profile.email} />
-        <Row label="Tenant" value={tenantId} mono />
-        <Row label="Auth" value={profile.clerk ? "Clerk" : "Demo (Clerk not configured)"} />
+        <Row label="Workspace" value={profile.workspace} />
       </Card>
 
       <Card>

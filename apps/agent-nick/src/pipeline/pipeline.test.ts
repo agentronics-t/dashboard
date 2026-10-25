@@ -13,7 +13,7 @@ import type { Llm } from "../llm/gemini.ts";
 import type { PageDigest, ToolProposal } from "./types.ts";
 import { validateChanges } from "./validate.ts";
 
-// A small Next.js App Router site with the shapes Agent Nick has to handle.
+// A small Next.js App Router site with the shapes Agent Nic has to handle.
 const FILES: Record<string, string> = {
   "package.json": JSON.stringify({ dependencies: { next: "15.0.0", react: "19.0.0", "react-dom": "19.0.0" } }),
   "tsconfig.json": `{

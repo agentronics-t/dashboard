@@ -1,4 +1,4 @@
-// The workspace's plan, for enforcing Agent Nick limits server-side.
+// The workspace's plan, for enforcing Agent Nic limits server-side.
 import { and, count, eq, gte, ne } from "drizzle-orm";
 import { PLANS, monthStart, resolvePlan, upgradeFor, type PlanSpec } from "@agentronics/intel-schema";
 import { schema, type Db } from "@agentronics/intel-schema/db";
