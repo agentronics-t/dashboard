@@ -9,7 +9,7 @@ export const PLAN_IDS = ["free", "starter", "pro", "enterprise"] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
 export type PaidPlanId = "starter" | "pro";
 
-/** How an Agent Nick tool reaches its action (see agent-nick ToolProposal.strategy). */
+/** How an Agent Nic tool reaches its action (see agent-nick ToolProposal.strategy). */
 export type ToolStrategy = "form" | "dom" | "fetch" | "server_action";
 
 export interface PlanSpec {

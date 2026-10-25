@@ -29,6 +29,15 @@ const CLERK_APPEARANCE = {
     colorDanger: "#C2320A",
     borderRadius: "10px",
     fontFamily: "var(--font-funnel-sans), sans-serif"
+  },
+  // Clerk colours text links with colorPrimary; lime text on white is unreadable.
+  elements: {
+    cardBox: "ag-clerk-card",
+    formButtonPrimary: "ag-clerk-primary",
+    footerActionLink: "ag-clerk-link",
+    formFieldAction: "ag-clerk-link",
+    identityPreviewEditButton: "ag-clerk-link",
+    formResendCodeLink: "ag-clerk-link"
   }
 };
 

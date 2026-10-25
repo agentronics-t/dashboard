@@ -91,4 +91,4 @@ Rules for `checkout` now apply to clicks from those agents too.
 
 ## Declarative forms
 
-The declarative API (`<form toolname tooldescription>`) was removed from the WebMCP spec in October 2026 and is only an explainer now. If you used it, register those forms as imperative tools that fill and submit the form — Agent Nick generates exactly that when it writes tools for your repo.
+The declarative API (`<form toolname tooldescription>`) was removed from the WebMCP spec in October 2026 and is only an explainer now. If you used it, register those forms as imperative tools that fill and submit the form — Agent Nic generates exactly that when it writes tools for your repo.

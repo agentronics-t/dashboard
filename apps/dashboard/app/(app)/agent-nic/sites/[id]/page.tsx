@@ -29,8 +29,8 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
   return (
     <>
       <div style={{ marginBottom: 10 }}>
-        <Link href="/agent-nick" className="ag-muted" style={{ fontSize: 13 }}>
-          ← Agent Nick
+        <Link href="/agent-nic" className="ag-muted" style={{ fontSize: 13 }}>
+          ← Agent Nic
         </Link>
       </div>
       <PageHeader
@@ -41,11 +41,11 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
             {current && ["queued", "running"].includes(current.status) && <LiveRefresh intervalMs={4000} />}
             <Badge kind={b.kind}>{b.label}</Badge>
             {busy ? (
-              <Link className="ag-btn" href={`/agent-nick/runs/${current.id}`}>
+              <Link className="ag-btn" href={`/agent-nic/runs/${current.id}`}>
                 {current.status === "awaiting_review" ? "Review tools" : current.status === "pr_open" ? "Open PR" : "Watch run"}
               </Link>
             ) : (
-              <RerunButton siteId={site.id} label={site.liveSha ? "Re-scan & update tools" : "Run Agent Nick"} primary={(changedSince && alerts) || !site.liveSha} />
+              <RerunButton siteId={site.id} label={site.liveSha ? "Re-scan & update tools" : "Run Agent Nic"} primary={(changedSince && alerts) || !site.liveSha} />
             )}
           </div>
         }
@@ -117,7 +117,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
       </Card>
 
       <Card>
-        <CardTitle>Changes by Agent Nick</CardTitle>
+        <CardTitle>Changes by Agent Nic</CardTitle>
         {runs.length === 0 ? (
           <p className="ag-muted" style={{ margin: 0 }}>No runs yet.</p>
         ) : (
@@ -140,7 +140,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
                   return (
                     <tr key={r.id}>
                       <td>
-                        <Link className="ag-link" href={`/agent-nick/runs/${r.id}`}>
+                        <Link className="ag-link" href={`/agent-nic/runs/${r.id}`}>
                           {timeAgo(r.createdAt)}
                         </Link>
                       </td>

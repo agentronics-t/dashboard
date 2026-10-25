@@ -1,4 +1,4 @@
-// Run the whole Agent Nick pipeline on a public repo without the GitHub App and
+// Run the whole Agent Nic pipeline on a public repo without the GitHub App and
 // without pushing anything: reads anonymously (or with GITHUB_DEV_TOKEN),
 // calls Gemini, auto-approves every proposed tool, and writes the files it
 // would commit to ./dry-run-out/<owner>__<repo>/.

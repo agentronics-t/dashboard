@@ -558,8 +558,8 @@ export const agentKeys = pgTable(
   ]
 );
 
-// ---- Agent Nick (GitHub → WebMCP pipeline) -----------------------------------
-// The console's Agent Nick reads a customer's repo through our GitHub App,
+// ---- Agent Nic (GitHub → WebMCP pipeline) -----------------------------------
+// The console's Agent Nic reads a customer's repo through our GitHub App,
 // proposes WebMCP tools, and opens a PR. The agent-nick service writes these
 // rows; the dashboard only reads them (plus the tenant's own review decision).
 
@@ -586,7 +586,7 @@ export const githubInstallations = pgTable(
   ]
 );
 
-/** A repo the tenant handed to Agent Nick — the "site" on the Agent overview. */
+/** A repo the tenant handed to Agent Nic — the "site" on the Agent overview. */
 export const agentNickSites = pgTable(
   "agent_nick_sites",
   {
