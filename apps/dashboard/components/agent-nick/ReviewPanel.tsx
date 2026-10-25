@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { cancelRun, submitReview } from "@/app/(app)/agent-nick/actions";
+import { cancelRun, submitReview, type SiteFixKind } from "@/app/(app)/agent-nick/actions";
 import { PlanChooser, type PlanCard } from "@/components/PlanChooser";
 import { Badge } from "@/components/ui";
 
@@ -19,6 +19,16 @@ export interface ReviewTool {
   auth: Auth;
   rationale: string;
   inputSchema: unknown;
+}
+
+/** A discoverability fix Agent Nick drafted in the "Site files" step. */
+export interface ReviewSiteFix {
+  kind: SiteFixKind;
+  title: string;
+  found: string;
+  plan: string;
+  files: string[];
+  preview: string;
 }
 
 export interface ReviewPlan {
@@ -44,12 +54,17 @@ type Choice = Record<string, { approved: boolean; auth: Auth }>;
 export function ReviewPanel({
   runId,
   tools,
+  siteFixes = [],
+  detectedUrl = null,
   plan,
   plans,
   billingReady
 }: {
   runId: string;
   tools: ReviewTool[];
+  siteFixes?: ReviewSiteFix[];
+  /** The address Agent Nick found (GitHub homepage, package.json, metadataBase…), if any. */
+  detectedUrl?: string | null;
   plan: ReviewPlan;
   plans: PlanCard[];
   billingReady: boolean;
@@ -70,6 +85,11 @@ export function ReviewPanel({
   });
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // Site files are on every plan; all start selected.
+  const [siteOn, setSiteOn] = useState<Record<string, boolean>>(() => Object.fromEntries(siteFixes.map((f) => [f.kind, true])));
+  const [siteUrl, setSiteUrl] = useState(detectedUrl ?? "");
+  const siteCount = siteFixes.filter((f) => siteOn[f.kind]).length;
+  const urlNeeded = siteFixes.some((f) => siteOn[f.kind] && f.kind !== "llms-txt") && !siteUrl.trim();
 
   const byPage = useMemo(() => {
     const m = new Map<string, ReviewTool[]>();
@@ -100,7 +120,8 @@ export function ReviewPanel({
       setError(null);
       const res = await submitReview(
         runId,
-        tools.map((t) => ({ id: t.id, approved: (choice[t.id]?.approved ?? false) && allowed(t), auth: choice[t.id]?.auth ?? t.auth }))
+        tools.map((t) => ({ id: t.id, approved: (choice[t.id]?.approved ?? false) && allowed(t), auth: choice[t.id]?.auth ?? t.auth })),
+        { siteFiles: siteFixes.map((f) => ({ kind: f.kind, approved: !!siteOn[f.kind] })), siteUrl: siteUrl.trim() || null }
       );
       if (!res.ok) return setError(res.error);
       router.refresh();
@@ -115,8 +136,64 @@ export function ReviewPanel({
 
   const needsUpgrade = lockedCount > 0 || overLimit || (max !== null && tools.filter(allowed).length > max);
 
+  const label = [approved ? `${approved} tool${approved === 1 ? "" : "s"}` : "", siteCount ? `${siteCount} site file${siteCount === 1 ? "" : "s"}` : ""]
+    .filter(Boolean)
+    .join(" + ");
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {siteFixes.length > 0 && (
+        <section>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--content-muted)", marginBottom: 6 }}>
+            Site files · help agents find and understand your site
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-lg)" }}>
+            {siteFixes.map((f, i) => (
+              <div key={f.kind} style={{ padding: "12px 14px", borderTop: i ? "1px solid var(--border)" : "none", opacity: siteOn[f.kind] ? 1 : 0.6 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!siteOn[f.kind]}
+                    onChange={(e) => setSiteOn((c) => ({ ...c, [f.kind]: e.target.checked }))}
+                    aria-label={`Include ${f.title}`}
+                    style={{ marginTop: 3, width: 16, height: 16, accentColor: "var(--brand-solid)" }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700 }}>{f.title}</div>
+                    <div style={{ fontSize: 13.5, marginTop: 4 }}>{f.plan}</div>
+                    <div className="ag-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+                      Today: {f.found} · <span className="ag-mono">{f.files.join(", ")}</span>
+                    </div>
+                    <details style={{ marginTop: 6 }}>
+                      <summary className="ag-muted" style={{ fontSize: 12, cursor: "pointer" }}>Preview</summary>
+                      <pre style={{ margin: "6px 0 0", background: "var(--code-bg)", color: "var(--code-fg)", borderRadius: "var(--radius-md)", padding: "8px 10px", fontSize: 12, overflowX: "auto", whiteSpace: "pre-wrap" }}>
+                        {f.preview}
+                      </pre>
+                    </details>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <label style={{ display: "block", padding: "12px 14px", borderTop: "1px solid var(--border)" }}>
+              <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Your site&apos;s address</span>
+              <input
+                className="ag-input"
+                type="url"
+                inputMode="url"
+                placeholder="https://yourcompany.com"
+                value={siteUrl}
+                onChange={(e) => setSiteUrl(e.target.value)}
+                style={{ maxWidth: 420 }}
+              />
+              <span className="ag-muted" style={{ display: "block", fontSize: 12, marginTop: 4 }}>
+                {detectedUrl ? "Found in your repo or on GitHub. " : ""}The sitemap and structured data use it.
+              </span>
+            </label>
+          </div>
+        </section>
+      )}
+
+      {tools.length > 0 && (
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <strong style={{ fontSize: 15 }}>
           {approved} of {tools.length} tools selected
@@ -129,6 +206,7 @@ export function ReviewPanel({
           Clear
         </button>
       </div>
+      )}
 
       {byPage.map(([page, list]) => (
         <section key={page}>
@@ -190,6 +268,7 @@ export function ReviewPanel({
       ))}
 
       {error && <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>{error}</p>}
+      {urlNeeded && <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>Add your site&apos;s address for the sitemap and structured data, or untick them.</p>}
       {overLimit && (
         <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>
           {plan.name} includes up to {max} tools per site — deselect {approved - (max ?? 0)} or upgrade.
@@ -197,8 +276,8 @@ export function ReviewPanel({
       )}
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button className="ag-btn ag-btn-primary" onClick={approve} disabled={pending || approved === 0 || overLimit}>
-          {pending ? "Working…" : `Approve ${approved} tool${approved === 1 ? "" : "s"} & write the code`}
+        <button className="ag-btn ag-btn-primary" onClick={approve} disabled={pending || (approved === 0 && siteCount === 0) || overLimit || urlNeeded}>
+          {pending ? "Working…" : `Approve ${label || "nothing"} & write the code`}
         </button>
         <button className="ag-btn" onClick={cancel} disabled={pending}>
           Cancel run

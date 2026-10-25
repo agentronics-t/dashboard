@@ -10,6 +10,7 @@ export const STEPS: { id: string; label: string; who: string }[] = [
   { id: "framework", label: "Framework", who: "Code" },
   { id: "pages", label: "Find pages", who: "Code" },
   { id: "actions", label: "Find actions", who: "Code" },
+  { id: "site", label: "Site files", who: "Code + Gemini" },
   { id: "propose", label: "Propose tools", who: "Gemini 3.8 Flash" },
   { id: "review", label: "Your review", who: "You · tools, access, plan" },
   { id: "write", label: "Write code", who: "Templates + Gemini" },

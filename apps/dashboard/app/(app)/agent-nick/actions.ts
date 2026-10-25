@@ -57,12 +57,15 @@ export async function rerunSite(siteId: string): Promise<ActionResult<{ runId: s
   return guard((tenantId) => startRun(siteId, tenantId));
 }
 
+export type SiteFixKind = "llms-txt" | "sitemap" | "structured-data";
+
 export async function submitReview(
   runId: string,
-  tools: { id: string; approved: boolean; auth: "public" | "signed_in" | "scoped" }[]
+  tools: { id: string; approved: boolean; auth: "public" | "signed_in" | "scoped" }[],
+  site: { siteFiles: { kind: SiteFixKind; approved: boolean }[]; siteUrl: string | null } = { siteFiles: [], siteUrl: null }
 ): Promise<ActionResult> {
   return guard(async (tenantId) => {
-    await nickFetch(`/v1/runs/${runId}/review`, { method: "POST", body: { tools }, tenantId });
+    await nickFetch(`/v1/runs/${runId}/review`, { method: "POST", body: { tools, ...site }, tenantId });
     revalidatePath(`/agent-nick/runs/${runId}`);
     return {};
   });

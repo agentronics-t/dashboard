@@ -8,6 +8,8 @@ import { detectFramework, discoverPages } from "./framework.ts";
 import { checkHandler } from "./handlers.ts";
 import { normalize } from "./propose.ts";
 import { RepoReader } from "./repo.ts";
+import { normaliseUrl, planSiteFiles, writeSiteFiles } from "./sitefiles.ts";
+import type { Llm } from "../llm/gemini.ts";
 import type { PageDigest, ToolProposal } from "./types.ts";
 import { validateChanges } from "./validate.ts";
 
@@ -282,5 +284,129 @@ describe("github auth helpers", () => {
     assert.equal(verifyWebhookSignature("s3cret", body, sig), true);
     assert.equal(verifyWebhookSignature("s3cret", `${body} `, sig), false);
     assert.equal(verifyWebhookSignature("s3cret", body, undefined), false);
+  });
+});
+
+describe("site files (llms.txt, sitemap, structured data)", () => {
+  const draft = {
+    name: "Trail Shop",
+    summary: "Outdoor gear for hikers.",
+    sections: [{ title: "Shop", links: [{ path: "/", label: "Home", note: "Search the catalogue" }, { path: "/made-up", label: "Ghost", note: "" }] }]
+  };
+  const fakeLlm = { usage: { tokensIn: 0, tokensOut: 0, costUsd: 0 }, json: async <T,>(call: { parse: (v: unknown) => T }) => call.parse(draft) } as unknown as Llm;
+
+  it("finds what's missing, drafts it, and writes it on top of the tool changes", async () => {
+    const files = { ...FILES, "README.md": "# Trail Shop\nGear for hikers.", "public/robots.txt": "User-agent: *\nAllow: /\n" };
+    const reader = fakeRepo(files);
+    const fw = await detectFramework(reader);
+    const pages = discoverPages(reader, fw);
+    const digests = await digestPages(reader, fw, pages);
+    const plan = await planSiteFiles({ reader, fw, pages, digests, llm: fakeLlm, repoFullName: "acme/shop", githubHomepage: "shop.example.com" });
+
+    assert.equal(plan.facts.url, "https://shop.example.com");
+    assert.deepEqual(plan.fixes.map((f) => f.kind), ["llms-txt", "sitemap", "structured-data"]);
+    assert.deepEqual(plan.routes, ["/", "/contact"]); // no /products/[id], no /login
+    assert.ok(!plan.llms?.sections[0]?.links.some((l) => l.path === "/made-up"), "drops links to pages that don't exist");
+
+    // Same layout edited by both the WebMCP mount and the structured data → one change.
+    const home = byRoute(digests, "/");
+    const tools: ToolProposal[] = [
+      { name: "search_products", page: "/", sourceId: home.forms[0]!.id, kind: "form", strategy: "form", description: "Search.", inputSchema: { type: "object", properties: {} }, risk: "read", readOnly: true, consequential: false, auth: "public", rationale: "" }
+    ];
+    const out = await generateCode({ reader, fw, digests, tools, handlers: {} });
+    await writeSiteFiles({ result: out, reader, fw, plan, kinds: ["llms-txt", "sitemap", "structured-data"], url: null });
+
+    const get = (p: string) => out.changes.find((c) => c.path === p)?.content ?? "";
+    assert.equal(out.changes.filter((c) => c.path === "app/layout.tsx").length, 1);
+    assert.match(get("app/layout.tsx"), /<AgentronicsWebMcp \/>/);
+    assert.match(get("app/layout.tsx"), /import \{ AgentronicsStructuredData \} from "\.\.\/agentronics\/AgentronicsStructuredData";/);
+    assert.match(get("app/layout.tsx"), /\{children\}\n\s+<AgentronicsStructuredData \/>/);
+    assert.match(get("agentronics/AgentronicsStructuredData.tsx"), /"@type": "Organization"/);
+    assert.match(get("app/sitemap.ts"), /const ROUTES = \["\/","\/contact"\];/);
+    assert.match(get("public/llms.txt"), /^# Trail Shop\n\n> Outdoor gear for hikers\.\n\n## Shop\n\n- \[Home\]\(https:\/\/shop\.example\.com\/\): Search the catalogue\n$/);
+    assert.match(get("public/robots.txt"), /Sitemap: https:\/\/shop\.example\.com\/sitemap\.xml\n$/);
+    assert.deepEqual(validateChanges(out.changes), []);
+  });
+
+  it("skips what the repo already has", async () => {
+    const files = {
+      ...FILES,
+      "public/llms.txt": "# Shop\n",
+      "app/sitemap.ts": "export default function sitemap() { return []; }",
+      "app/layout.tsx": FILES["app/layout.tsx"]!.replace("<body>", '<body><script type="application/ld+json">{}</script>')
+    };
+    const reader = fakeRepo(files);
+    const fw = await detectFramework(reader);
+    const pages = discoverPages(reader, fw);
+    const plan = await planSiteFiles({ reader, fw, pages, digests: [], llm: null, repoFullName: "acme/shop", githubHomepage: null });
+    assert.deepEqual(plan.fixes, []);
+    assert.deepEqual(plan.present.sort(), ["llms-txt", "sitemap", "structured-data"]);
+  });
+
+  it("writes static files and head JSON-LD for a plain HTML site", async () => {
+    const files = {
+      "index.html": "<!doctype html>\n<html>\n  <head>\n    <title>Bakery</title>\n  </head>\n  <body><h1>Bakery</h1></body>\n</html>\n",
+      "about.html": "<html><head><title>About</title></head><body><h1>About us</h1></body></html>",
+      CNAME: "bakery.example.org\n"
+    };
+    const reader = fakeRepo(files);
+    const fw = await detectFramework(reader);
+    const pages = discoverPages(reader, fw);
+    const plan = await planSiteFiles({ reader, fw, pages, digests: [], llm: null, repoFullName: "acme/bakery", githubHomepage: null });
+    assert.equal(plan.facts.url, "https://bakery.example.org");
+    const out = { changes: [], toolFiles: {}, manualSteps: [], skipped: [] } as Parameters<typeof writeSiteFiles>[0]["result"];
+    await writeSiteFiles({ result: out, reader, fw, plan, kinds: ["llms-txt", "sitemap", "structured-data"], url: null });
+    const get = (p: string) => out.changes.find((c) => c.path === p)?.content ?? "";
+    assert.match(get("sitemap.xml"), /<loc>https:\/\/bakery\.example\.org\/about<\/loc>/);
+    assert.match(get("index.html"), /<script type="application\/ld\+json">[\s\S]*"WebSite"[\s\S]*<\/script>\n {2}<\/head>/);
+    assert.ok(get("llms.txt").startsWith("# "));
+    assert.deepEqual(validateChanges(out.changes), []);
+  });
+
+  it("mounts structured data in _app on the Pages Router", async () => {
+    const files = {
+      "package.json": JSON.stringify({ name: "pages-site", dependencies: { next: "14.0.0", react: "18.0.0" } }),
+      "pages/index.tsx": "export default function Home() { return <h1>Home</h1>; }",
+      "pages/_app.tsx": 'import type { AppProps } from "next/app";\nexport default function App({ Component, pageProps }: AppProps) {\n  return <Component {...pageProps} />;\n}\n'
+    };
+    const reader = fakeRepo(files);
+    const fw = await detectFramework(reader);
+    const pages = discoverPages(reader, fw);
+    const plan = await planSiteFiles({ reader, fw, pages, digests: [], llm: null, repoFullName: "acme/pages-site", githubHomepage: "https://pages.example.com" });
+    const out = { changes: [], toolFiles: {}, manualSteps: [], skipped: [] } as Parameters<typeof writeSiteFiles>[0]["result"];
+    await writeSiteFiles({ result: out, reader, fw, plan, kinds: ["structured-data", "sitemap"], url: null });
+    const get = (p: string) => out.changes.find((c) => c.path === p)?.content ?? "";
+    assert.match(get("pages/_app.tsx"), /<Component \{\.\.\.pageProps\} \/>\n\s+<AgentronicsStructuredData \/>/);
+    assert.match(get("agentronics/AgentronicsStructuredData.jsx"), /import Head from "next\/head";/); // no tsconfig → JavaScript
+    assert.match(get("public/sitemap.xml"), /<loc>https:\/\/pages\.example\.com\/<\/loc>/);
+    assert.deepEqual(validateChanges(out.changes), []);
+  });
+
+  it("normalises addresses and refuses local ones", () => {
+    assert.equal(normaliseUrl("shop.example.com/"), "https://shop.example.com");
+    assert.equal(normaliseUrl("http://localhost:3000"), null);
+    assert.equal(normaliseUrl("not a url"), null);
+  });
+});
+
+describe("Pages Router mount", () => {
+  it("wraps a bare `return <Component />` in a fragment instead of breaking the JSX", async () => {
+    const files = {
+      "package.json": JSON.stringify({ dependencies: { next: "14.0.0", react: "18.0.0" } }),
+      "tsconfig.json": "{}",
+      "pages/index.tsx": 'export default function Home() {\n  return (\n    <form action="/search">\n      <input name="q" aria-label="Search" />\n      <button>Go</button>\n    </form>\n  );\n}\n',
+      "pages/_app.tsx": 'import type { AppProps } from "next/app";\nexport default function App({ Component, pageProps }: AppProps) {\n  return <Component {...pageProps} />;\n}\n'
+    };
+    const reader = fakeRepo(files);
+    const fw = await detectFramework(reader);
+    const digests = await digestPages(reader, fw, discoverPages(reader, fw));
+    const home = byRoute(digests, "/");
+    const tools: ToolProposal[] = [
+      { name: "search", page: "/", sourceId: home.forms[0]!.id, kind: "form", strategy: "form", description: "Search.", inputSchema: { type: "object", properties: {} }, risk: "read", readOnly: true, consequential: false, auth: "public", rationale: "" }
+    ];
+    const out = await generateCode({ reader, fw, digests, tools, handlers: {} });
+    const app = out.changes.find((c) => c.path === "pages/_app.tsx")?.content ?? "";
+    assert.match(app, /return <>\n\s+<Component \{\.\.\.pageProps\} \/>\n\s+<AgentronicsWebMcp \/>\n\s+<\/>;/);
+    assert.deepEqual(validateChanges(out.changes), []);
   });
 });

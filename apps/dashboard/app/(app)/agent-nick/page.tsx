@@ -45,7 +45,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader
         title="Agent Nick"
-        subtitle="Our agents write WebMCP tools into your own code and open a pull request. You review, you merge."
+        subtitle="Our agents write WebMCP tools, a sitemap, llms.txt and structured data into your own code and open a pull request. You review, you merge."
         action={active ? <LiveRefresh intervalMs={4000} /> : undefined}
       />
 

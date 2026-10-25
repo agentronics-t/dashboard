@@ -10,11 +10,28 @@ export interface FileIssue {
   issues: string[];
 }
 
+function jsonLdIssues(content: string): string[] {
+  const issues: string[] = [];
+  for (const m of content.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi)) {
+    try {
+      JSON.parse(m[1] ?? "");
+    } catch {
+      issues.push("JSON-LD block is not valid JSON");
+    }
+  }
+  return issues;
+}
+
 function syntaxIssues(path: string, content: string): string[] {
   if (/\.html?$/i.test(path)) {
     const opens = (content.match(/<script\b/gi) ?? []).length;
     const closes = (content.match(/<\/script>/gi) ?? []).length;
-    return opens === closes ? [] : ["unbalanced <script> tags"];
+    return [...(opens === closes ? [] : ["unbalanced <script> tags"]), ...jsonLdIssues(content)];
+  }
+  if (/(^|\/)llms\.txt$/.test(path)) return /^# \S/.test(content) && /\]\(/.test(content) ? [] : ["llms.txt needs a # title and at least one link"];
+  if (/\.xml$/i.test(path)) {
+    const urls = (content.match(/<loc>/g) ?? []).length;
+    return /<urlset[\s>]/.test(content) && /<\/urlset>\s*$/.test(content) && urls > 0 ? [] : ["sitemap.xml is not a valid <urlset> with at least one <loc>"];
   }
   if (!/\.(tsx?|jsx?|mjs|cjs)$/.test(path)) return [];
   const out = ts.transpileModule(content, {

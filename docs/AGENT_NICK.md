@@ -1,9 +1,10 @@
 # Agent Nick
 
 Agent Nick makes a customer's website agent-ready. They connect GitHub and pick
-their repo. Agent Nick reads the code, proposes WebMCP tools for its pages, and
-after one review (tools, who may use them, plan + payment) opens a pull request
-that adds the tools. The customer's CI checks it, they accept it in the console,
+their repo. Agent Nick reads the code, proposes WebMCP tools for its pages and
+the site files it's missing (llms.txt, sitemap, structured data), and after one
+review (tools, who may use them, site files + address, plan + payment) opens a
+pull request that adds them. The customer's CI checks it, they accept it in the console,
 and the tools go live with their next deploy.
 
 ```
@@ -19,6 +20,7 @@ console (Vercel)  ──Clerk token──▶  agent-nick (Cloud Run)  ──▶ 
 |---|---|---|
 | Read the code | code | One API call lists the tree. Only the files a step needs are fetched. No clone. |
 | Framework, pages, actions | code | `package.json`, file conventions and the TypeScript parser. Each page becomes a few-hundred-token digest. |
+| Site files | code + Gemini (low) | What the repo is missing of the Agent Readiness Score's discoverability checks: an llms.txt (Gemini drafts it from the README and page titles; links only to real routes), a sitemap of the public static routes (`app/sitemap.ts` on the App Router, a static `sitemap.xml` elsewhere, plus a `Sitemap:` line in an existing robots.txt) and schema.org Organization + WebSite JSON-LD (a component in the root layout / `_app`, or a block in `index.html`). Skips anything the repo already has. The site's address comes from the GitHub homepage, package.json, `metadataBase`, a canonical link or CNAME, and the customer confirms it in the review. |
 | Propose tools | Gemini (low effort) | One structured-output call per batch of pages. Code then enforces the rules: real source only, form tools only on forms whose fields all have names, no password or card forms, risk mapped to hints and default auth. |
 | Your review | customer | Pauses the LangGraph run (`interrupt`). It resumes in any process when they approve. Plan limits apply: tools per site and tool types (Free: 5 form tools; Starter: 15 incl. page actions + API calls; Pro: unlimited incl. server actions). |
 | Write code | templates + Gemini (medium) | `data-agent-tool` anchors on the forms and controls tools act on, one `webmcp-tools` module (every tool imperative, with title + annotations), and a mount per framework. Gemini writes only the bodies of fetch / server-action tools, checked and repaired once. |

@@ -1,9 +1,11 @@
 // The Agent Nick pipeline as a LangGraph graph:
 //
-//   read_code → detect_framework → find_pages → find_actions → propose_tools
-//     → review ⏸ → write_code → validate_code → open_pr
+//   read_code → detect_framework → find_pages → find_actions → site_files
+//     → propose_tools → review ⏸ → write_code → validate_code → open_pr
 //
-// Only `propose` and `write` call the model. `review` pauses the graph
+// `site_files` finds the discoverability gaps that aren't tools (llms.txt,
+// sitemap, structured data) and drafts them; they ship in the same PR.
+// Only `site_files` (llms.txt), `propose` and `write` call the model. `review` pauses the graph
 // (interrupt) until the customer approves in the console; the checkpoint lives
 // in Postgres, so the run resumes in any process — minutes or days later.
 
@@ -17,10 +19,11 @@ import { countActions, digestPages } from "./extract.ts";
 import { detectFramework, discoverPages } from "./framework.ts";
 import { writeHandlers } from "./handlers.ts";
 import { proposeTools } from "./propose.ts";
-import { openPullRequest, prBody } from "./publish.ts";
+import { openPullRequest, prBody, prTitle } from "./publish.ts";
 import { RepoReader } from "./repo.ts";
 import { RunReporter, type StepId } from "./reporter.ts";
-import type { FileChange, Framework, PageDigest, PageInfo, ReviewDecision, ToolProposal } from "./types.ts";
+import { normaliseUrl, planSiteFiles, writeSiteFiles } from "./sitefiles.ts";
+import type { FileChange, Framework, PageDigest, PageInfo, ReviewDecision, SiteFixKind, SitePlan, ToolProposal } from "./types.ts";
 import { diffStat, validateChanges } from "./validate.ts";
 
 export interface PipelineDeps {
@@ -43,6 +46,10 @@ const State = Annotation.Root({
   digests: Annotation<PageDigest[]>,
   tools: Annotation<ToolProposal[]>,
   approved: Annotation<ToolProposal[]>,
+  site: Annotation<SitePlan | null>,
+  /** Site files the customer approved, and the address they use. */
+  siteKinds: Annotation<SiteFixKind[]>,
+  siteUrl: Annotation<string | null>,
   handlers: Annotation<Record<string, Handler>>,
   changes: Annotation<FileChange[]>,
   toolFiles: Annotation<Record<string, string>>,
@@ -56,6 +63,10 @@ type S = typeof State.State;
 type U = typeof State.Update;
 
 class Halt extends Error {}
+
+/** The site files that actually produced a file (an address-less sitemap, say, doesn't). */
+const kindsWritten = (written: Partial<Record<SiteFixKind, string[]>> | undefined, kinds: SiteFixKind[]) =>
+  kinds.filter((k) => (written?.[k] ?? []).length > 0);
 
 export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSaver) {
   const { db } = deps;
@@ -107,6 +118,13 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     };
   }
 
+  /** Tool code, then the approved site files on top of it (so shared files are edited once). */
+  async function build(s: S, reader: RepoReader, tools: ToolProposal[], handlers: Record<string, Handler>, kinds: SiteFixKind[]) {
+    const gen = await generateCode({ reader, fw: s.framework, digests: s.digests, tools, handlers });
+    if (s.site && kinds.length) await writeSiteFiles({ result: gen, reader, fw: s.framework, plan: s.site, kinds, url: s.siteUrl ?? null });
+    return gen;
+  }
+
   const read = step("read", "Reading the code through GitHub (no clone)", async (s, r) => {
     const row = await site(s);
     const gh = deps.github(row.installationId);
@@ -149,7 +167,6 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     const { reader } = await repo(s);
     const digests = await digestPages(reader, s.framework, s.pages);
     const n = countActions(digests);
-    if (!n) throw new Halt("No user actions (forms, buttons, API calls) found to turn into tools.");
     await r.update({ actionsFound: n });
     const forms = digests.reduce((a, d) => a + d.forms.length, 0);
     await r.done("actions", `${n} actions on ${digests.length} pages (${forms} forms)`, {
@@ -158,11 +175,28 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     return { digests };
   });
 
+  const siteFiles = step("site", "Checking llms.txt, sitemap and structured data", async (s, r, llm) => {
+    const { reader, site: row } = await repo(s);
+    const plan = await planSiteFiles({ reader, fw: s.framework, pages: s.pages, digests: s.digests, llm, repoFullName: row.repoFullName, githubHomepage: row.homepage });
+    if (!plan.fixes.length && !countActions(s.digests)) {
+      throw new Halt("Nothing to add: no user actions to turn into tools, and the site already has llms.txt, a sitemap and structured data.");
+    }
+    const has = plan.present.length ? ` · already has ${plan.present.join(", ")}` : "";
+    await r.done(
+      "site",
+      plan.fixes.length ? `${plan.fixes.length} to add: ${plan.fixes.map((f) => f.title).join(", ")}${has}` : `Nothing to add${has}`,
+      { fixes: plan.fixes, facts: plan.facts, present: plan.present }
+    );
+    return { site: plan };
+  });
+
   const propose = step("propose", "Proposing tools with Gemini", async (s, r, llm) => {
     const row = await site(s);
-    const tools = await proposeTools(llm, row.repoFullName, s.digests);
-    if (!tools.length) throw new Halt("Gemini found nothing worth exposing as a tool on this site.");
-    const inserted = await db
+    const tools = countActions(s.digests) ? await proposeTools(llm, row.repoFullName, s.digests) : [];
+    if (!tools.length && !s.site?.fixes.length) throw new Halt("Gemini found nothing worth exposing as a tool on this site.");
+    const inserted = !tools.length
+      ? []
+      : await db
       .insert(schema.agentNickTools)
       .values(
         tools.map((t) => ({
@@ -185,8 +219,11 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     const ids = new Map(inserted.map((x) => [x.name, x.id]));
     const withIds = tools.map((t) => ({ ...t, id: ids.get(t.name) ?? "" }));
     await r.update({ toolsProposed: tools.length });
-    await r.done("propose", `${tools.length} tools proposed (${tools.filter((t) => t.kind === "form").length} from existing forms)`);
-    await r.wait("review", "Waiting for your review: approve tools, set who may use them, pick a plan.", "awaiting_review");
+    await r.done(
+      "propose",
+      tools.length ? `${tools.length} tools proposed (${tools.filter((t) => t.kind === "form").length} from existing forms)` : "No actions to turn into tools; site files only"
+    );
+    await r.wait("review", "Waiting for your review: approve tools and site files, set who may use them, pick a plan.", "awaiting_review");
     await db.update(schema.agentNickSites).set({ status: "awaiting_review", updatedAt: new Date() }).where(eq(schema.agentNickSites.id, s.siteId));
     return { tools: withIds };
   });
@@ -199,59 +236,81 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     const approved = s.tools
       .filter((t) => t.id && byId.get(t.id)?.approved)
       .map((t) => ({ ...t, auth: byId.get(t.id ?? "")?.auth ?? t.auth }));
+    const offered = new Set((s.site?.fixes ?? []).map((f) => f.kind));
+    const siteKinds = (decision.siteFiles ?? []).filter((f) => f.approved && offered.has(f.kind)).map((f) => f.kind);
+    const siteUrl = normaliseUrl(decision.siteUrl) ?? s.site?.facts.url ?? null;
     await db.update(schema.agentNickRuns).set({ status: "running", toolsApproved: approved.length, decision, updatedAt: new Date() }).where(eq(schema.agentNickRuns.id, s.runId));
-    if (!approved.length) {
-      await r.fail("review", "No tools were approved, so there is nothing to write.");
-      return { halted: "nothing approved", approved };
+    if (!approved.length && !siteKinds.length) {
+      await r.fail("review", "Nothing was approved, so there is nothing to write.");
+      return { halted: "nothing approved", approved, siteKinds, siteUrl };
     }
-    await r.done("review", `${approved.length} of ${s.tools.length} tools approved`);
-    return { approved };
+    const parts = [
+      s.tools.length ? `${approved.length} of ${s.tools.length} tools` : "",
+      siteKinds.length ? `${siteKinds.length} site file${siteKinds.length === 1 ? "" : "s"}` : ""
+    ].filter(Boolean);
+    await r.done("review", `${parts.join(" and ")} approved`);
+    return { approved, siteKinds, siteUrl };
   };
 
   const write = step("write", "Writing the code", async (s, r, llm) => {
     const { reader } = await repo(s);
     const { handlers, failed } = await writeHandlers(llm, s.approved, s.digests);
     const usable = s.approved.filter((t) => !failed.some((f) => f.name === t.name));
-    const gen = await generateCode({ reader, fw: s.framework, digests: s.digests, tools: usable, handlers });
+    const gen = await build(s, reader, usable, handlers, s.siteKinds ?? []);
     const skipped = [...gen.skipped, ...failed.map((f) => ({ name: f.name, reason: `Generated code failed checks: ${f.issues.join("; ")}` }))];
     await r.done("write", `${gen.changes.length} files (${gen.changes.filter((c) => c.before === null).length} new)`, {
+      siteFiles: gen.siteFiles ?? {},
       files: gen.changes.map((c) => ({ path: c.path, new: c.before === null, reason: c.reason })),
       skipped
     });
-    return { handlers, changes: gen.changes, toolFiles: gen.toolFiles, manualSteps: gen.manualSteps, skipped };
+    return { handlers, changes: gen.changes, toolFiles: gen.toolFiles, manualSteps: gen.manualSteps, skipped, siteKinds: kindsWritten(gen.siteFiles, s.siteKinds ?? []) };
   });
 
   const validate = step("validate", "Checking every changed file", async (s, r) => {
     const { reader } = await repo(s);
     let tools = s.approved.filter((t) => !s.skipped.some((k) => k.name === t.name));
+    let kinds = s.siteKinds ?? [];
     let { changes, toolFiles, manualSteps } = s;
+    let siteFilesWritten: Partial<Record<SiteFixKind, string[]>> = {};
     const skipped = [...s.skipped];
-    // Drop the tools behind any file that fails, regenerate, and re-check (twice at most).
+    // Drop the tools or site files behind any file that fails, regenerate, and re-check (twice at most).
     for (let round = 0; round < 2; round++) {
       const problems = validateChanges(changes);
       if (!problems.length) break;
       const bad = new Set(problems.map((p) => p.path));
+      const issuesOf = (path: string) => problems.find((p) => p.path === path)?.issues.join("; ");
       const drop = tools.filter((t) => bad.has(toolFiles[t.name] ?? ""));
-      for (const t of drop) skipped.push({ name: t.name, reason: `Failed checks in ${toolFiles[t.name]}: ${problems.find((p) => p.path === toolFiles[t.name])?.issues.join("; ")}` });
+      for (const t of drop) skipped.push({ name: t.name, reason: `Failed checks in ${toolFiles[t.name]}: ${issuesOf(toolFiles[t.name] ?? "")}` });
+      const gen0 = await build(s, reader, tools, s.handlers, kinds);
+      const dropKinds = kinds.filter((k) => (gen0.siteFiles?.[k] ?? []).some((p) => bad.has(p)) && !drop.length);
+      for (const k of dropKinds) {
+        const path = (gen0.siteFiles?.[k] ?? []).find((p) => bad.has(p)) ?? "";
+        skipped.push({ name: k, reason: `Failed checks in ${path}: ${issuesOf(path)}` });
+      }
       tools = tools.filter((t) => !drop.includes(t));
-      if (!drop.length) throw new Error(`Generated files failed checks: ${problems.map((p) => `${p.path}: ${p.issues.join("; ")}`).join(" | ")}`);
-      const gen = await generateCode({ reader, fw: s.framework, digests: s.digests, tools, handlers: s.handlers });
+      kinds = kinds.filter((k) => !dropKinds.includes(k));
+      if (!drop.length && !dropKinds.length) throw new Error(`Generated files failed checks: ${problems.map((p) => `${p.path}: ${p.issues.join("; ")}`).join(" | ")}`);
+      const gen = await build(s, reader, tools, s.handlers, kinds);
       ({ changes, toolFiles, manualSteps } = gen);
+      siteFilesWritten = gen.siteFiles ?? {};
     }
-    if (!changes.length || !tools.length) throw new Halt("None of the approved tools passed the checks.");
+    if (!changes.length || (!tools.length && !kinds.length)) throw new Halt("Nothing that was approved passed the checks.");
     const stat = diffStat(changes);
     await r.update({ filesChanged: changes.length, additions: stat.additions, deletions: stat.deletions, toolsApproved: tools.length });
-    await r.done("validate", `All ${changes.length} files parse; tools follow the WebMCP rules`, { ...stat, skipped: skipped.map((k) => k.name) });
-    return { approved: tools, changes, toolFiles, manualSteps, skipped };
+    await r.done("validate", `All ${changes.length} files parse${tools.length ? "; tools follow the WebMCP rules" : ""}`, { ...stat, skipped: skipped.map((k) => k.name) });
+    return { approved: tools, changes, toolFiles, manualSteps, skipped, siteKinds: Object.keys(siteFilesWritten).length ? kindsWritten(siteFilesWritten, kinds) : kinds };
   });
 
   const pr = step("pr", "Opening a pull request", async (s, r) => {
     const { gh, site: row } = await repo(s);
     const branch = `agentronics/agent-nick-${s.runId.slice(0, 8)}`;
-    const title = `Make this site agent-ready: ${s.approved.length} WebMCP tool${s.approved.length === 1 ? "" : "s"}`;
+    const siteFixes = (s.site?.fixes ?? []).filter((f) => (s.siteKinds ?? []).includes(f.kind));
+    const title = prTitle(s.approved.length, siteFixes);
     const body = prBody({
       fw: s.framework,
       tools: s.approved,
+      siteFixes,
+      siteUrl: s.siteUrl ?? null,
       changes: s.changes,
       manualSteps: s.manualSteps,
       skipped: s.skipped,
@@ -314,6 +373,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     .addNode("detect_framework", framework)
     .addNode("find_pages", pages)
     .addNode("find_actions", actions)
+    .addNode("site_files", siteFiles)
     .addNode("propose_tools", propose)
     .addNode("review", review)
     .addNode("write_code", write)
@@ -323,7 +383,8 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     .addConditionalEdges("read_code", next("detect_framework"), ["detect_framework", END])
     .addConditionalEdges("detect_framework", next("find_pages"), ["find_pages", END])
     .addConditionalEdges("find_pages", next("find_actions"), ["find_actions", END])
-    .addConditionalEdges("find_actions", next("propose_tools"), ["propose_tools", END])
+    .addConditionalEdges("find_actions", next("site_files"), ["site_files", END])
+    .addConditionalEdges("site_files", next("propose_tools"), ["propose_tools", END])
     .addConditionalEdges("propose_tools", next("review"), ["review", END])
     .addConditionalEdges("review", next("write_code"), ["write_code", END])
     .addConditionalEdges("write_code", next("validate_code"), ["validate_code", END])

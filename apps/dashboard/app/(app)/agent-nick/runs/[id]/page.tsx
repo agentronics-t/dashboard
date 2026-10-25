@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Card, CardTitle, PageHeader, fmt } from "@/components/ui";
 import { Pipeline, RunLog, statusBadgeProps } from "@/components/agent-nick/Pipeline";
-import { ReviewPanel, type ReviewPlan, type ReviewTool } from "@/components/agent-nick/ReviewPanel";
+import { ReviewPanel, type ReviewPlan, type ReviewSiteFix, type ReviewTool } from "@/components/agent-nick/ReviewPanel";
 import { AcceptButton, RerunButton } from "@/components/agent-nick/RunActions";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { upgradeFor } from "@agentronics/intel-schema";
@@ -57,6 +57,12 @@ export default async function RunPage({ params, searchParams }: { params: Promis
       inputSchema: t.inputSchema
     };
   });
+  // The "Site files" step's drafts, and what the review approved.
+  const siteStep = events.find((e) => e.step === "site" && e.kind === "done")?.data as { fixes?: ReviewSiteFix[]; facts?: { url?: string | null } } | undefined;
+  const siteFixes = siteStep?.fixes ?? [];
+  const decision = (run.decision ?? {}) as { siteFiles?: { kind: string; approved: boolean }[] };
+  const siteApproved = siteFixes.filter((f) => decision.siteFiles?.some((d) => d.kind === f.kind && d.approved)).map((f) => f.title);
+  const shipped = [run.toolsApproved ? `${run.toolsApproved} WebMCP tool${run.toolsApproved === 1 ? "" : "s"}` : "", ...siteApproved].filter(Boolean).join(", ");
   const dryRun = run.status === "ready" ? events.find((e) => e.step === "pr" && e.kind === "done")?.data as { files?: { path: string; content: string }[] } | undefined : undefined;
 
   return (
@@ -67,7 +73,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
         </Link>
       </div>
       <PageHeader
-        title={run.status === "awaiting_review" ? "Review the proposed tools" : "Agent Nick run"}
+        title={run.status === "awaiting_review" ? (tools.length ? "Review the proposed tools" : "Review the site files") : "Agent Nick run"}
         subtitle={`${site.repoFullName}${run.framework ? ` · ${run.framework}` : ""} · started ${timeAgo(run.createdAt)}${run.costUsd > 0 ? ` · model cost $${run.costUsd.toFixed(3)}` : ""}`}
         action={
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -94,8 +100,19 @@ export default async function RunPage({ params, searchParams }: { params: Promis
           <p className="ag-muted" style={{ margin: "-6px 0 16px", fontSize: 13.5 }}>
             Found {fmt(run.pagesFound)} pages and {fmt(run.actionsFound)} actions. Untick anything you don&apos;t want agents to use, and choose who may use each
             tool. Read-only tools run without asking; payments and irreversible actions always ask the visitor first.
+            {siteFixes.length > 0 && " Site files add what agents need to find your site: an llms.txt guide, a sitemap and structured data."}
           </p>
-          {reviewPlan && <ReviewPanel runId={run.id} tools={reviewTools} plan={reviewPlan} plans={planCards()} billingReady={billingConfigured()} />}
+          {reviewPlan && (
+            <ReviewPanel
+              runId={run.id}
+              tools={reviewTools}
+              siteFixes={siteFixes}
+              detectedUrl={siteStep?.facts?.url ?? site.homepage ?? null}
+              plan={reviewPlan}
+              plans={planCards()}
+              billingReady={billingConfigured()}
+            />
+          )}
         </Card>
       )}
 
@@ -105,7 +122,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <a className="ag-link" href={run.prUrl ?? "#"} target="_blank" rel="noreferrer" style={{ fontSize: 16 }}>
-                #{run.prNumber} · {run.toolsApproved} WebMCP tools ↗
+                #{run.prNumber} · {shipped || "changes"} ↗
               </a>
               <div className="ag-muted ag-mono" style={{ fontSize: 12.5, marginTop: 4 }}>
                 {run.branch} · {run.filesChanged} files · +{run.additions} −{run.deletions}
@@ -127,7 +144,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
         <Card style={{ marginBottom: 18, borderColor: "var(--success)" }}>
           <CardTitle>Live</CardTitle>
           <p style={{ margin: 0 }}>
-            {run.toolsApproved} WebMCP tools were merged {timeAgo(run.mergedAt)}. They go live with your next deploy.{" "}
+            {shipped || "The changes"} {shipped.includes(",") || run.toolsApproved > 1 ? "were" : "was"} merged {timeAgo(run.mergedAt)}. They go live with your next deploy.{" "}
             <Link className="ag-link" href={`/agent-nick/sites/${site.id}`}>
               See the site
             </Link>

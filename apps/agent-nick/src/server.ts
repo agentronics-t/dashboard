@@ -8,6 +8,8 @@ import { GitHubError, verifyWebhookSignature, type GitHub, type GitHubApp } from
 import { handleWebhook, markMerged, type FollowupDeps } from "./pipeline/followup.ts";
 import { limitError, runsThisMonth, siteCount, tenantPlan } from "./plan.ts";
 import type { ToolStrategy } from "@agentronics/intel-schema";
+import { normaliseUrl } from "./pipeline/sitefiles.ts";
+import { SITE_FIX_KINDS, type SiteFixKind } from "./pipeline/types.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -262,9 +264,17 @@ export function buildServer(deps: ServerDeps) {
         .object({
           tools: z
             .array(z.object({ id: z.string().uuid(), approved: z.boolean(), auth: z.enum(["public", "signed_in", "scoped"]) }))
-            .max(100)
+            .max(100),
+          siteFiles: z.array(z.object({ kind: z.enum(SITE_FIX_KINDS as [SiteFixKind, ...SiteFixKind[]]), approved: z.boolean() })).max(3).optional(),
+          siteUrl: z.string().max(300).nullish()
         })
         .parse(req.body);
+
+      // The sitemap and structured data need the site's real address.
+      const siteUrl = normaliseUrl(body.siteUrl);
+      if (body.siteUrl && !siteUrl) return reply.status(400).send({ error: "bad_site_url", message: "That doesn't look like your site's address (e.g. https://yourcompany.com)." });
+      const needsUrl = (body.siteFiles ?? []).some((f) => f.approved && f.kind !== "llms-txt");
+      if (needsUrl && !siteUrl) return reply.status(400).send({ error: "site_url_required", message: "Add your site's address: the sitemap and structured data need it." });
 
       // Plan limits: how many tools, and which kinds, this workspace may ship.
       const plan = await tenantPlan(db, req.tenantId);
@@ -289,7 +299,7 @@ export function buildServer(deps: ServerDeps) {
         }
       }
 
-      const decision = { tools: body.tools, approvedBy: req.userId };
+      const decision = { tools: body.tools, siteFiles: body.siteFiles ?? [], siteUrl, approvedBy: req.userId };
       // Flip the status first so a double-submit can't resume the graph twice.
       const [run] = await db
         .update(schema.agentNickRuns)
@@ -304,7 +314,11 @@ export function buildServer(deps: ServerDeps) {
           .set({ approved: t.approved, auth: t.auth })
           .where(and(eq(schema.agentNickTools.id, t.id), eq(schema.agentNickTools.runId, runId)));
       }
-      await db.update(schema.agentNickSites).set({ status: "running", updatedAt: new Date() }).where(eq(schema.agentNickSites.id, run.siteId));
+      // Remember the address for the next run.
+      await db
+        .update(schema.agentNickSites)
+        .set({ status: "running", ...(siteUrl ? { homepage: siteUrl } : {}), updatedAt: new Date() })
+        .where(eq(schema.agentNickSites.id, run.siteId));
       executor.dispatch("resume", runId);
       return reply.status(202).send({ ok: true });
     });

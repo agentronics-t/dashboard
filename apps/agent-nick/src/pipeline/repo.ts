@@ -33,8 +33,11 @@ export interface RepoFile {
 }
 
 export class RepoReader {
+  /** Source files (code + package/tsconfig) — what the analysis steps read. */
   readonly files: RepoFile[];
   private readonly byPath: Map<string, RepoFile>;
+  /** Every file outside ignored dirs (README, robots.txt, llms.txt, sitemap.xml, CNAME…). */
+  private readonly allByPath: Map<string, RepoFile>;
   private readonly cache = new Map<string, Promise<string | null>>();
   private readonly gh: GitHub;
   readonly fullName: string;
@@ -42,12 +45,22 @@ export class RepoReader {
   constructor(gh: GitHub, fullName: string, entries: TreeEntry[]) {
     this.gh = gh;
     this.fullName = fullName;
-    this.files = entries
+    const all = entries
       .filter((e) => e.type === "blob")
       .filter((e) => !e.path.split("/").some((seg) => IGNORED_DIRS.has(seg)))
-      .filter((e) => CODE_EXT.test(e.path) || /(^|\/)(package\.json|tsconfig\.json|jsconfig\.json)$/.test(e.path))
       .map((e) => ({ path: e.path, sha: e.sha, size: e.size ?? 0 }));
+    this.allByPath = new Map(all.map((f) => [f.path, f]));
+    this.files = all.filter((f) => CODE_EXT.test(f.path) || /(^|\/)(package\.json|tsconfig\.json|jsconfig\.json)$/.test(f.path));
     this.byPath = new Map(this.files.map((f) => [f.path, f]));
+  }
+
+  /** Any file in the repo, not just source files. */
+  exists(path: string): boolean {
+    return this.allByPath.has(path);
+  }
+
+  listAll(re: RegExp): string[] {
+    return [...this.allByPath.keys()].filter((p) => re.test(p));
   }
 
   has(path: string): boolean {
@@ -58,15 +71,17 @@ export class RepoReader {
     return this.files.filter((f) => re.test(f.path)).map((f) => f.path);
   }
 
-  read(path: string): Promise<string | null> {
-    let p = this.cache.get(path);
+  /** Text of a source file — or, with `anyFile`, of any file in the repo. */
+  read(path: string, { anyFile = false }: { anyFile?: boolean } = {}): Promise<string | null> {
+    const key = anyFile ? `*${path}` : path;
+    let p = this.cache.get(key);
     if (!p) {
-      const f = this.byPath.get(path);
+      const f = (anyFile ? this.allByPath : this.byPath).get(path);
       p =
         !f || f.size > MAX_FILE_BYTES
           ? Promise.resolve(null)
           : this.gh.blobText(this.fullName, f.sha).catch(() => null);
-      this.cache.set(path, p);
+      this.cache.set(key, p);
     }
     return p;
   }

@@ -10,6 +10,7 @@ export type StepId =
   | "framework"
   | "pages"
   | "actions"
+  | "site"
   | "propose"
   | "review"
   | "write"

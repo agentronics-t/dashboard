@@ -11,7 +11,7 @@
 import ts from "typescript";
 import { parseSource } from "./extract.ts";
 import type { RepoReader } from "./repo.ts";
-import type { FileChange, Framework, PageDigest, ToolProposal } from "./types.ts";
+import type { FileChange, Framework, PageDigest, SiteFixKind, ToolProposal } from "./types.ts";
 
 export interface Handler {
   /** Statements of `async execute(input, options)`; `input` and `signal` are in scope. */
@@ -26,6 +26,8 @@ export interface CodegenResult {
   manualSteps: string[];
   /** Tools we could not wire (source code moved, unsupported shape…). */
   skipped: { name: string; reason: string }[];
+  /** Files written for each site fix (llms.txt, sitemap, structured data) — see sitefiles.ts. */
+  siteFiles?: Partial<Record<SiteFixKind, string[]>>;
 }
 
 interface Edit {
@@ -51,7 +53,7 @@ function markupAttrs(attrs: Record<string, string>): string {
     .join("");
 }
 
-function relImport(fromFile: string, toFile: string): string {
+export function relImport(fromFile: string, toFile: string): string {
   const from = fromFile.split("/").slice(0, -1);
   const to = toFile.replace(/\.(tsx?|jsx?|mjs)$/, "").split("/");
   let i = 0;
@@ -61,7 +63,7 @@ function relImport(fromFile: string, toFile: string): string {
 }
 
 /** Position right after the last import (or the "use client" directive, or 0). */
-function importInsertPos(text: string, path: string): number {
+export function importInsertPos(text: string, path: string): number {
   const sf = parseSource(path, text);
   let pos = 0;
   for (const s of sf.statements) {
@@ -74,7 +76,7 @@ function importInsertPos(text: string, path: string): number {
 
 
 /** Where generated files go: <app root>/src/agentronics or <app root>/agentronics. */
-function moduleDir(reader: RepoReader, fw: Framework): string {
+export function moduleDir(reader: RepoReader, fw: Framework): string {
   const base = fw.root ? `${fw.root}/` : "";
   if (fw.kind === "static-html") return fw.root;
   const hasSrc = reader.list(new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}src/`)).length > 0;
@@ -242,7 +244,7 @@ export function startAgentronicsTools(): void {
 `;
 }
 
-function toJs(source: string, fileName: string): string {
+export function toJs(source: string, fileName: string): string {
   return ts.transpileModule(source, {
     fileName,
     compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.Preserve }
@@ -287,26 +289,29 @@ export function AgentronicsWebMcp() {
 /** Insert `<AgentronicsWebMcp />` next to `{children}` (layout) or `<Component …/>` (_app). */
 function mountEdits(path: string, text: string, importSpec: string, anchor: "children" | "Component"): Edit[] | null {
   const sf = parseSource(path, text);
-  let at: number | null = null;
+  let found: ts.Node | null = null;
   const visit = (n: ts.Node) => {
-    if (at !== null) return;
+    if (found) return;
     if (anchor === "children" && ts.isJsxExpression(n) && n.expression && ts.isIdentifier(n.expression) && n.expression.text === "children") {
-      at = n.getEnd();
+      found = n;
     } else if (anchor === "Component" && ts.isJsxSelfClosingElement(n) && n.tagName.getText(sf) === "Component") {
-      at = n.getEnd();
+      found = n;
     }
     n.forEachChild(visit);
   };
   visit(sf);
-  if (at === null) {
-    const body = text.lastIndexOf("</body>");
-    if (body === -1) return null;
-    at = body;
+  const imp = { pos: importInsertPos(text, path), insert: `\nimport { AgentronicsWebMcp } from "${importSpec}";` };
+  if (found) {
+    const node = found as ts.Node;
+    // `return <Component {...pageProps} />` has no JSX parent: wrap both in a fragment.
+    if (!ts.isJsxElement(node.parent) && !ts.isJsxFragment(node.parent)) {
+      return [imp, { pos: node.getStart(sf), insert: "<>\n      " }, { pos: node.getEnd(), insert: "\n      <AgentronicsWebMcp />\n    </>" }];
+    }
+    return [imp, { pos: node.getEnd(), insert: "\n        <AgentronicsWebMcp />" }];
   }
-  return [
-    { pos: importInsertPos(text, path), insert: `\nimport { AgentronicsWebMcp } from "${importSpec}";` },
-    { pos: at, insert: "\n        <AgentronicsWebMcp />" }
-  ];
+  const body = text.lastIndexOf("</body>");
+  if (body === -1) return null;
+  return [imp, { pos: body, insert: "\n        <AgentronicsWebMcp />" }];
 }
 
 export async function generateCode(opts: {
