@@ -8,6 +8,8 @@
 export const PLAN_IDS = ["free", "starter", "pro", "enterprise"] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
 export type PaidPlanId = "starter" | "pro";
+export type BillingInterval = "month" | "year";
+export const isBillingInterval = (v: unknown): v is BillingInterval => v === "month" || v === "year";
 
 /** How an Agent Nic tool reaches its action (see agent-nick ToolProposal.strategy). */
 export type ToolStrategy = "form" | "dom" | "fetch" | "server_action";
@@ -17,6 +19,8 @@ export interface PlanSpec {
   name: string;
   /** USD per month; null = custom (contact sales). */
   priceUsd: number | null;
+  /** USD per year when billed yearly (21% off twelve months); null = custom. */
+  priceUsdYearly: number | null;
   tagline: string;
   limits: {
     /** null = unlimited (or set per contract). */
@@ -46,7 +50,6 @@ export interface PlanSpec {
     domEnforcement: boolean;
     toolAccessEnforced: boolean;
     siteMemory: boolean;
-    contextTransfer: boolean;
     webhookExport: boolean;
     auditAndTraceExport: boolean;
     consoleSso: boolean;
@@ -62,6 +65,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     id: "free",
     name: "Free",
     priceUsd: 0,
+    priceUsdYearly: 0,
     tagline: "See your site through an agent's eyes.",
     limits: {
       agentNickSites: 1,
@@ -86,7 +90,6 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       domEnforcement: NO,
       toolAccessEnforced: NO,
       siteMemory: NO,
-      contextTransfer: NO,
       webhookExport: NO,
       auditAndTraceExport: NO,
       consoleSso: NO,
@@ -97,6 +100,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     id: "starter",
     name: "Starter",
     priceUsd: 19,
+    priceUsdYearly: 180,
     tagline: "Make your site agent-ready.",
     limits: {
       agentNickSites: 1,
@@ -121,7 +125,6 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       domEnforcement: NO,
       toolAccessEnforced: YES,
       siteMemory: YES,
-      contextTransfer: NO,
       webhookExport: NO,
       auditAndTraceExport: NO,
       consoleSso: NO,
@@ -132,6 +135,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     id: "pro",
     name: "Pro",
     priceUsd: 49,
+    priceUsdYearly: 465,
     tagline: "Govern every agent across your sites.",
     limits: {
       agentNickSites: 3,
@@ -156,7 +160,6 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       domEnforcement: YES,
       toolAccessEnforced: YES,
       siteMemory: YES,
-      contextTransfer: YES,
       webhookExport: YES,
       auditAndTraceExport: NO,
       consoleSso: NO,
@@ -167,6 +170,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     id: "enterprise",
     name: "Enterprise",
     priceUsd: null,
+    priceUsdYearly: null,
     tagline: "Custom limits, SSO and an SLA.",
     limits: {
       agentNickSites: null,
@@ -191,7 +195,6 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       domEnforcement: YES,
       toolAccessEnforced: YES,
       siteMemory: YES,
-      contextTransfer: YES,
       webhookExport: YES,
       auditAndTraceExport: YES,
       consoleSso: YES,

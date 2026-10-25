@@ -727,5 +727,6 @@ export const workspacePlans = pgTable("workspace_plans", {
   dodoCustomerId: text("dodo_customer_id"),
   checkoutSessionId: text("checkout_session_id"), // pending checkout, confirmed on return/webhook
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  billingInterval: text("billing_interval").notNull().default("month"), // month | year
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });

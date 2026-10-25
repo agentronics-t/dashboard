@@ -1,6 +1,6 @@
 import { eq, or } from "drizzle-orm";
 import { schema } from "@agentronics/intel-schema/db";
-import { isPaidPlanId } from "@agentronics/intel-schema";
+import { isBillingInterval, isPaidPlanId } from "@agentronics/intel-schema";
 import { dodo, planFromProduct, planStatus } from "@/lib/billing";
 import { db } from "@/lib/tenant";
 
@@ -40,14 +40,17 @@ export async function POST(req: Request) {
     customer?: { customer_id?: string };
   };
   const tenantId = sub.metadata?.tenant_id;
-  const plan = planFromProduct(sub.product_id) ?? (isPaidPlanId(sub.metadata?.plan) ? sub.metadata.plan : null);
+  const product = planFromProduct(sub.product_id);
+  const plan = product?.plan ?? (isPaidPlanId(sub.metadata?.plan) ? sub.metadata.plan : null);
+  const interval = product?.interval ?? (isBillingInterval(sub.metadata?.interval) ? sub.metadata.interval : null);
   const values = {
     status: planStatus(sub.status),
     dodoSubscriptionId: sub.subscription_id,
     dodoCustomerId: sub.customer?.customer_id ?? null,
     currentPeriodEnd: sub.next_billing_date ? new Date(sub.next_billing_date) : null,
     updatedAt: new Date(),
-    ...(plan ? { plan } : {})
+    ...(plan ? { plan } : {}),
+    ...(interval ? { billingInterval: interval } : {})
   };
 
   const updated = await db()

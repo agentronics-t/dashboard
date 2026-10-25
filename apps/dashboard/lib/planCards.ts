@@ -20,4 +20,4 @@ function highlights(p: PlanSpec): string[] {
 }
 
 export const planCards = (): PlanCard[] =>
-  PLAN_IDS.map((id) => PLANS[id]).map((p) => ({ id: p.id, name: p.name, price: p.priceUsd, tagline: p.tagline, highlights: highlights(p) }));
+  PLAN_IDS.map((id) => PLANS[id]).map((p) => ({ id: p.id, name: p.name, price: p.priceUsd, priceYearly: p.priceUsdYearly, tagline: p.tagline, highlights: highlights(p) }));
