@@ -1,14 +1,14 @@
-// Agentronics logomark: the copper "A". Same geometry as the landing site's
-// components/ui/Logo.tsx (MARK_PATH), traced from the brand master. The colour
-// is baked: it's the logo, so it reads the same on Bone and PCB Black.
+// Agentronics logo: the lime "A" on a red rounded square. Same geometry as the
+// landing site's components/ui/Logo.tsx (MARK_PATH), traced from the brand
+// master. The colours are baked: it's the logo, so it reads the same in both themes.
 
-const COPPER = "#E8763A";
 const MARK_PATH = "M458 0L835 660L317 660L368 570L664 570L458 209L119 800L0 800Z";
 
 export function Logomark({ size = 26 }: { size?: number; onDark?: boolean }) {
   return (
-    <svg width={(size * 835) / 800} height={size} viewBox="0 0 835 800" role="img" aria-label="Agentronics" style={{ flex: "none" }}>
-      <path d={MARK_PATH} fill={COPPER} />
+    <svg width={size} height={size} viewBox="0 0 32 32" role="img" aria-label="Agentronics" style={{ flex: "none" }}>
+      <rect width="32" height="32" rx="9" fill="#FF4D1F" />
+      <path transform="translate(8 8.33) scale(.019162)" d={MARK_PATH} fill="#D4FF3A" />
     </svg>
   );
 }

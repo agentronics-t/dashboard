@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { Funnel_Display, Funnel_Sans, Martian_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
-const display = Space_Grotesk({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-display", display: "swap" });
-const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-inter", display: "swap" });
-const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "700"], variable: "--font-jetbrains", display: "swap" });
+const display = Funnel_Display({ subsets: ["latin"], variable: "--font-display", display: "swap" });
+const sans = Funnel_Sans({ subsets: ["latin"], variable: "--font-funnel-sans", display: "swap" });
+const mono = Martian_Mono({ subsets: ["latin"], variable: "--font-martian", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Agentronics Console",
@@ -14,21 +14,21 @@ export const metadata: Metadata = {
 
 const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-// Clerk's sign-in, user menu and org switcher in Circuit Copper: Copper primary
-// with PCB Black text, Bone surfaces, the same fonts.
+// Clerk's sign-in, user menu and org switcher in the design system: lime
+// primary with ink text, white surfaces, the same fonts.
 const CLERK_APPEARANCE = {
   variables: {
-    colorPrimary: "#E8763A",
-    colorTextOnPrimaryBackground: "#0D1A16",
-    colorText: "#0D1A16",
-    colorTextSecondary: "#5E6B66",
-    colorBackground: "#FBF8F2",
-    colorInputBackground: "#FBF8F2",
-    colorInputText: "#0D1A16",
-    colorSuccess: "#12715F",
-    colorDanger: "#B42318",
-    borderRadius: "8px",
-    fontFamily: "var(--font-inter), sans-serif"
+    colorPrimary: "#D4FF3A",
+    colorTextOnPrimaryBackground: "#0B0B0C",
+    colorText: "#0B0B0C",
+    colorTextSecondary: "rgba(11,11,12,.65)",
+    colorBackground: "#FFFFFF",
+    colorInputBackground: "#FFFFFF",
+    colorInputText: "#0B0B0C",
+    colorSuccess: "#4D6B00",
+    colorDanger: "#C2320A",
+    borderRadius: "10px",
+    fontFamily: "var(--font-funnel-sans), sans-serif"
   }
 };
 
@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const themeScript = `(function(){try{var t=localStorage.getItem('ag-theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
 
   const body = (
-    <html lang="en" className={`${display.variable} ${inter.variable} ${mono.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${display.variable} ${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

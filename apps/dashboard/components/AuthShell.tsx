@@ -1,6 +1,6 @@
 import { Logomark } from "./Logomark";
 
-/** Sign-in / sign-up frame: PCB Black with the mark, the Clerk card on top in Bone. */
+/** Sign-in / sign-up frame: ink with the logo, the Clerk card on top in white. */
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="ag-pcb" style={{ minHeight: "100vh", display: "grid", placeItems: "center", alignContent: "center", gap: 28, background: "var(--canvas)", color: "var(--content)", padding: "48px 16px" }}>
