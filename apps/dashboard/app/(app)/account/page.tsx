@@ -12,12 +12,12 @@ async function getProfile() {
     return { name: "Demo user", email: "demo@agentronics.dev", workspace: "Demo workspace" };
   }
   const { auth, currentUser } = await import("@clerk/nextjs/server");
-  const [user, { orgSlug }] = await Promise.all([currentUser(), auth()]);
+  const [user, { orgId, orgSlug }] = await Promise.all([currentUser(), auth()]);
   return {
     name: user?.fullName || user?.username || "—",
     email: user?.primaryEmailAddress?.emailAddress || "—",
     // An organization's workspace is shared with its members; otherwise it's yours alone.
-    workspace: orgSlug ? `Team (${orgSlug})` : "Personal"
+    workspace: orgSlug ? `Team (${orgSlug})` : orgId ? "Team" : "Personal"
   };
 }
 
