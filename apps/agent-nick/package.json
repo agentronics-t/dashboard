@@ -1,0 +1,32 @@
+{
+  "name": "agent-nick",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --sourcemap --outfile=dist/index.cjs --external:pg-native",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "dev": "node --watch --experimental-strip-types --env-file-if-exists=.env src/index.ts",
+    "test": "node --test --experimental-strip-types --env-file-if-exists=.env \"src/**/*.test.ts\"",
+    "knowledge:sync": "node scripts/sync-knowledge.mjs"
+  },
+  "dependencies": {
+    "@agentronics/intel-schema": "workspace:*",
+    "@google-cloud/run": "^3.2.1",
+    "@google/genai": "^1.52.0",
+    "@langchain/core": "1.2.17",
+    "@langchain/langgraph": "1.4.21",
+    "@langchain/langgraph-checkpoint-postgres": "1.0.6",
+    "drizzle-orm": "^0.45.3",
+    "fastify": "^5.12.5",
+    "google-auth-library": "10.5.0",
+    "jose": "^6.2.3",
+    "typescript": "^5.8.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "esbuild": "^0.25.0"
+  }
+}

@@ -27,8 +27,8 @@ const btnStyle: React.CSSProperties = {
   padding: "8px 16px",
   borderRadius: "var(--radius-md)",
   border: "none",
-  background: "var(--brand-solid)",
-  color: "#fff",
+  background: "var(--action)",
+  color: "var(--action-content)",
   fontSize: 14,
   fontWeight: 600,
   cursor: "pointer"
@@ -37,11 +37,9 @@ const btnStyle: React.CSSProperties = {
 export function SdkKeys({
   keys,
   mint,
-  revoke,
-  ingestUrl = "POST /v1/sdk/events"
+  revoke
 }: {
   keys: KeyRow[];
-  ingestUrl?: string;
   mint: (label: string) => Promise<{ id: string; key: string; prefix: string }>;
   revoke: (id: string) => Promise<void>;
 }) {
@@ -51,11 +49,11 @@ export function SdkKeys({
 
   return (
     <Card>
-      <CardTitle>Ingest keys</CardTitle>
+      <CardTitle>SDK ingest keys</CardTitle>
       <p style={{ margin: "0 0 14px", color: "var(--content-secondary)", fontSize: 14, lineHeight: 1.55 }}>
-        Your middleware streams auth logs to <code>{ingestUrl}</code> with{" "}
-        <code>Authorization: Bearer &lt;key&gt;</code>. Keep the key server-side — it is secret and must never ship
-        to the browser.
+        Stream SDK events from your backend to <code>POST /v1/sdk/events</code> with an{" "}
+        <code>Authorization: Bearer &lt;key&gt;</code> header. Keep the key server-side — it is secret and
+        must never ship to the browser.
       </p>
 
       {fresh && (

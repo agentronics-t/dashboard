@@ -1,13 +1,13 @@
-// Shared presentational primitives — flat, hairline, token-driven (no shadows
-// on cards; brand glow reserved for the logomark).
+// Shared presentational primitives in the design system: flat white cards,
+// display-font headings, mono labels. Hard shadows are for things you press.
 import type { CSSProperties, ReactNode } from "react";
 
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 22 }}>
       <div>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.01em" }}>{title}</h1>
-        {subtitle && <p style={{ margin: "6px 0 0", color: "var(--content-muted)", fontSize: 14 }}>{subtitle}</p>}
+        <h1 style={{ margin: 0, fontSize: 30, fontWeight: 650, letterSpacing: "-0.035em", lineHeight: 1.05 }}>{title}</h1>
+        {subtitle && <p style={{ margin: "8px 0 0", color: "var(--content-secondary)", fontSize: 15 }}>{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -16,21 +16,21 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
 
 export function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", padding: 18, ...style }}>
+    <div style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "var(--radius-xl)", padding: 20, ...style }}>
       {children}
     </div>
   );
 }
 
 export function CardTitle({ children }: { children: ReactNode }) {
-  return <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, letterSpacing: "-0.01em" }}>{children}</div>;
+  return <div style={{ fontFamily: "var(--font-heading)", fontSize: 17, fontWeight: 650, marginBottom: 14, letterSpacing: "-0.02em" }}>{children}</div>;
 }
 
 export function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <Card style={{ padding: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--content-muted)" }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", marginTop: 6 }}>{value}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--content-muted)" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-heading)", fontSize: 34, fontWeight: 750, letterSpacing: "-0.04em", marginTop: 8, fontVariantNumeric: "tabular-nums" }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: "var(--content-muted)", marginTop: 4 }}>{sub}</div>}
     </Card>
   );
@@ -51,7 +51,7 @@ const STATUS: Record<string, { bg: string; fg: string }> = {
 export function Badge({ children, kind = "info" }: { children: ReactNode; kind?: string }) {
   const c = SEVERITY[kind] ?? STATUS[kind] ?? { bg: "var(--surface-raised)", fg: "var(--content-secondary)" };
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: "var(--radius-pill)", background: c.bg, color: c.fg, fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: "var(--radius-pill)", background: c.bg, color: c.fg, fontFamily: "var(--font-mono)", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.fg }} />
       {children}
     </span>
@@ -59,9 +59,9 @@ export function Badge({ children, kind = "info" }: { children: ReactNode; kind?:
 }
 
 export const LANES = [
-  { key: "webmcp", label: "WebMCP", color: "var(--brand)" },
-  { key: "webbotauth", label: "Web Bot Auth", color: "var(--accent)" },
-  { key: "stealth", label: "Stealth", color: "var(--neutral-300)" }
+  { key: "webmcp", label: "WebMCP", color: "var(--data-1)" },
+  { key: "webbotauth", label: "Web Bot Auth", color: "var(--data-2)" },
+  { key: "stealth", label: "Stealth", color: "var(--data-3)" }
 ];
 
 export function Legend({ items }: { items: { label: string; color: string }[] }) {

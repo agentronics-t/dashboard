@@ -12,7 +12,7 @@ export function SdkEmpty({ feature }: { feature: string }) {
       </div>
       <div style={{ fontSize: 13, color: "var(--content-muted)", marginTop: 6, maxWidth: 460, marginInline: "auto" }}>
         Add an SDK ingest key in{" "}
-        <a href="/configure/api-keys" style={{ color: "var(--brand)" }}>
+        <a href="/settings" style={{ color: "var(--brand)" }}>
           Settings
         </a>{" "}
         and stream events from your backend to <code>POST /v1/sdk/events</code>.
@@ -93,7 +93,7 @@ export function BarList({ items }: { items: Bar[] }) {
             {it.label}
           </span>
           <div style={{ flex: 1, height: 9, borderRadius: "var(--radius-pill)", background: "var(--surface-raised)", overflow: "hidden" }}>
-            <div style={{ width: `${(it.value / max) * 100}%`, height: "100%", background: it.color ?? "var(--brand)" }} />
+            <div style={{ width: `${(it.value / max) * 100}%`, height: "100%", background: it.color ?? "var(--data-1)" }} />
           </div>
           <span style={{ width: 56, flex: "none", textAlign: "right", fontSize: 13, color: "var(--content-muted)" }}>{fmt(it.value)}</span>
         </div>

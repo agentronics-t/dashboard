@@ -64,7 +64,7 @@ upsert_job() {
 echo "▶ Watchdog cron (hourly)"
 upsert_job intel-watchdog "0 * * * *" "${WORKER_URL}/tasks/watchdog" '{}' "${WORKER_URL}"
 
-echo "▶ Retention prune cron (daily 04:00 IST) — prunes sdk_events past RETENTION_DAYS"
+echo "▶ Retention prune cron (daily 04:00 IST) — prunes sdk_events past each plan's retention"
 upsert_job intel-prune "0 4 * * *" "${WORKER_URL}/tasks/prune" '{}' "${WORKER_URL}"
 
 if [[ -n "${CONNECTOR_ID}" ]]; then

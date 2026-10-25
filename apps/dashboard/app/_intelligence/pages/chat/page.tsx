@@ -77,8 +77,8 @@ export default function ChatPage() {
             <div style={{
               padding: "11px 15px",
               borderRadius: "var(--radius-lg)",
-              background: m.role === "user" ? "var(--brand-solid)" : "var(--surface)",
-              color: m.role === "user" ? "#fff" : "var(--content)",
+              background: m.role === "user" ? "var(--brand-soft)" : "var(--surface)",
+              color: "var(--content)",
               border: m.role === "user" ? "none" : "1px solid var(--border)",
               fontSize: 14,
               lineHeight: 1.55,
@@ -100,7 +100,7 @@ export default function ChatPage() {
           placeholder="Ask about your agent traffic…"
           style={{ flex: 1, padding: "12px 14px", borderRadius: "var(--radius-md)", border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--content)", fontSize: 14, outline: "none" }}
         />
-        <button type="submit" disabled={busy || !input.trim()} style={{ padding: "0 20px", borderRadius: "var(--radius-md)", border: "none", background: busy || !input.trim() ? "var(--surface-raised)" : "var(--brand-solid)", color: busy || !input.trim() ? "var(--content-muted)" : "#fff", fontWeight: 600, fontSize: 14, cursor: busy || !input.trim() ? "default" : "pointer" }}>
+        <button type="submit" disabled={busy || !input.trim()} style={{ padding: "0 20px", borderRadius: "var(--radius-md)", border: "none", background: busy || !input.trim() ? "var(--surface-raised)" : "var(--action)", color: busy || !input.trim() ? "var(--content-muted)" : "var(--action-content)", fontWeight: 600, fontSize: 14, cursor: busy || !input.trim() ? "default" : "pointer" }}>
           Send
         </button>
       </form>

@@ -1,0 +1,116 @@
+// Branch + single commit + pull request, entirely through the GitHub API.
+
+import type { GitHub } from "../github/client.ts";
+import type { FileChange, Framework, SiteFix, ToolProposal } from "./types.ts";
+
+const AUTH_LABEL = { public: "Anyone", signed_in: "Signed-in visitors", scoped: "Scoped grant only" } as const;
+const RISK_LABEL = { read: "Read-only", write: "Changes data", payment: "Payment", destructive: "Irreversible" } as const;
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+const SHORT: Record<SiteFix["kind"], string> = { "llms-txt": "llms.txt", sitemap: "sitemap", "structured-data": "structured data" };
+
+export function prTitle(tools: number, siteFixes: SiteFix[]): string {
+  const parts = [tools ? plural(tools, "WebMCP tool") : "", siteFixes.map((f) => SHORT[f.kind]).join(", ")].filter(Boolean);
+  return `Make this site agent-ready: ${parts.join(" + ")}`;
+}
+
+export function prBody(opts: {
+  fw: Framework;
+  tools: ToolProposal[];
+  siteFixes?: SiteFix[];
+  siteUrl?: string | null;
+  changes: FileChange[];
+  manualSteps: string[];
+  skipped: { name: string; reason: string }[];
+  runUrl: string | null;
+}): string {
+  const { tools, changes } = opts;
+  const siteFixes = opts.siteFixes ?? [];
+  const rows = tools.map(
+    (t) =>
+      `| \`${t.name}\` | ${t.page === "*" ? "Every page" : `\`${t.page}\``} | ${t.kind === "form" ? "Form (filled + submitted)" : t.strategy === "dom" ? "On-page action" : t.strategy === "server_action" ? "Server action" : "API call"} | ${RISK_LABEL[t.risk]} | ${AUTH_LABEL[t.auth]} |`
+  );
+  const what = [
+    tools.length ? `**${plural(tools.length, "WebMCP tool")}** so AI agents in the browser can use your site through typed tools instead of scraping and clicking` : "",
+    siteFixes.length ? `**${siteFixes.map((f) => f.title).join(", ")}** so AI agents can find and understand it` : ""
+  ].filter(Boolean);
+  return [
+    `This PR makes your site agent-ready: it adds ${what.join(", and ")}.`,
+    ...(tools.length ? ["", "| Tool | Page | How it works | Risk | Who may use it |", "|---|---|---|---|---|", ...rows] : []),
+    ...(siteFixes.length
+      ? [
+          "",
+          "### Site files",
+          ...siteFixes.map((f) => `- **${f.title}**: ${f.plan}`),
+          ...(opts.siteUrl ? [`- They use \`${opts.siteUrl}\` as your site's address.`] : [])
+        ]
+      : []),
+    "",
+    "### What changed",
+    ...changes.map((c) => `- \`${c.path}\` — ${c.before === null ? "new file" : "edited"}: ${c.reason}`),
+    "",
+    "### Safety",
+    ...(tools.length
+      ? [
+          "- Read-only tools are marked `readOnlyHint`; payments and irreversible actions are marked `consequentialHint`, so agents ask the user before running them. Your existing confirmations stay in place.",
+          "- Tools are feature-detected: browsers without WebMCP ignore everything here, so nothing changes for human visitors.",
+          "- Tools register only on their own pages and unregister on navigation (AbortSignal)."
+        ]
+      : []),
+    ...(siteFixes.length ? ["- Site files are invisible to people: nothing on your pages looks different. Agents and search engines see the same content as everyone else."] : []),
+    ...(opts.manualSteps.length ? ["", "### One manual step", ...opts.manualSteps.map((s) => `- ${s}`)] : []),
+    ...(opts.skipped.length ? ["", "### Not included", ...opts.skipped.map((s) => `- \`${s.name}\`: ${s.reason}`)] : []),
+    "",
+    ...(tools.length
+      ? [
+          "### Govern them (optional)",
+          "Using the Agentronics SDK? Pass your client as the third argument of `registerAgentronicsTools(pathname, signal, client)` and the tools register through it — the rules, reviews and tool descriptions you manage in the Agentronics console then apply. No new dependency is added by this PR.",
+          "",
+          "### Try it",
+          "1. Chrome 149+ (WebMCP origin trial) or any Chrome with `about:flags#enable-webmcp-testing` turned on.",
+          "2. Open a page of this branch's preview deploy, then inspect the tools with the Model Context Tool Inspector extension (or any WebMCP-aware agent).",
+          ""
+        ]
+      : []),
+    ...(siteFixes.length ? ["### Check the score", "After this deploys, re-run your free Agent Readiness Score at https://agentronics.dev/scan.", ""] : []),
+    `_Opened by Agentronics Agent Nick for ${opts.fw.label}.${opts.runUrl ? ` [View the run](${opts.runUrl})` : ""}_`
+  ].join("\n");
+}
+
+export async function openPullRequest(opts: {
+  gh: GitHub;
+  fullName: string;
+  baseBranch: string;
+  baseSha: string;
+  baseTreeSha: string;
+  branch: string;
+  title: string;
+  body: string;
+  changes: FileChange[];
+}) {
+  const sha = await opts.gh.commitFiles({
+    fullName: opts.fullName,
+    branch: opts.branch,
+    parentSha: opts.baseSha,
+    baseTreeSha: opts.baseTreeSha,
+    message: `${opts.title}\n\nGenerated by Agentronics Agent Nick.`,
+    files: opts.changes.map((c) => ({ path: c.path, content: c.content })),
+    createBranch: true
+  });
+  const pr = await opts.gh.createPull(opts.fullName, {
+    title: opts.title,
+    head: opts.branch,
+    base: opts.baseBranch,
+    body: opts.body
+  });
+  const stats = await opts.gh.pull(opts.fullName, pr.number).catch(() => null);
+  return {
+    number: pr.number,
+    url: pr.html_url,
+    headSha: sha,
+    additions: stats?.additions ?? null,
+    deletions: stats?.deletions ?? null,
+    changedFiles: stats?.changed_files ?? null
+  };
+}

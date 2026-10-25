@@ -36,6 +36,20 @@
       "when": 1790819843941,
       "tag": "0004_agent_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792673069775,
+      "tag": "0005_agent_nick",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792814266061,
+      "tag": "0006_pillars",
+      "breakpoints": true
     }
   ]
 }

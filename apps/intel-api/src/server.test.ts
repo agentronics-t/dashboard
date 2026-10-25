@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createDb, schema } from "@agentronics/intel-schema/db";
 import { AuthError, clerkVerifier } from "./auth.ts";
 import { buildServer } from "./server.ts";
@@ -490,4 +490,214 @@ test("prune (internal) deletes sdk_events past the retention window, keeps recen
   ).map((r) => r.id);
   assert.ok(!ids.includes(oldId), "old event pruned");
   assert.ok(ids.includes(newId), "recent event kept");
+});
+
+// ---- plans: monthly recording quota + per-plan retention -------------------
+
+async function tenantWithKey(clerkOrgId: string, plan?: string) {
+  const { generateIngestKey, monthStart } = await import("@agentronics/intel-schema");
+  const [t] = await db.insert(schema.tenants).values({ name: clerkOrgId, clerkOrgId }).returning({ id: schema.tenants.id });
+  const key = generateIngestKey();
+  await db.insert(schema.sdkIngestKeys).values({ tenantId: t!.id, hashedKey: key.hash, prefix: key.prefix, label: "plan-test" });
+  if (plan) await db.insert(schema.workspacePlans).values({ tenantId: t!.id, plan, status: "active" });
+  return { tenantId: t!.id, key: key.raw, month: monthStart().date };
+}
+
+test("free plan: events past the monthly quota are dropped, never rejected (202)", async () => {
+  const org = `org_quota_${randomUUID()}`;
+  const { tenantId, key, month } = await tenantWithKey(org);
+  try {
+    // 4,999 of the Free plan's 5,000 already recorded this month.
+    await db.insert(schema.sdkEventDaily).values({ tenantId, date: month, type: "agent.detected", agentClass: "crawler", outcome: "success", count: 4_999 });
+    const res = await app.inject({ method: "POST", url: "/v1/sdk/events", headers: { authorization: `Bearer ${key}` }, payload: sampleBatch() });
+    assert.equal(res.statusCode, 202);
+    assert.equal(res.json().accepted, 1);
+    assert.equal(res.json().dropped, 2);
+    assert.deepEqual(res.json().quota, { plan: "free", limit: 5_000, used: 4_999 });
+
+    const again = await app.inject({ method: "POST", url: "/v1/sdk/events", headers: { authorization: `Bearer ${key}` }, payload: sampleBatch() });
+    assert.equal(again.statusCode, 202);
+    assert.equal(again.json().accepted, 0);
+    assert.equal(again.json().dropped, 3);
+  } finally {
+    await db.delete(schema.tenants).where(eq(schema.tenants.clerkOrgId, org));
+  }
+});
+
+test("prune keeps each workspace's plan retention (free 7d, starter 30d)", async () => {
+  const freeOrg = `org_ret_free_${randomUUID()}`;
+  const starterOrg = `org_ret_starter_${randomUUID()}`;
+  const free = await tenantWithKey(freeOrg);
+  const starter = await tenantWithKey(starterOrg, "starter");
+  try {
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    const row = (tenantId: string) => ({
+      id: `evt_ret_${randomUUID()}`,
+      tenantId,
+      siteId: "ret-site",
+      sessionId: "sess_ret",
+      occurredAt: tenDaysAgo,
+      ingestedAt: tenDaysAgo,
+      type: "agent.detected" as const,
+      outcome: "success" as const
+    });
+    const [f, s] = [row(free.tenantId), row(starter.tenantId)];
+    await db.insert(schema.sdkEvents).values([f, s]);
+
+    const res = await app.inject({ method: "POST", url: "/v1/maintenance/prune", headers: { authorization: "Bearer internal-svc-token" } });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().retention_days.free, 7);
+
+    const left = (await db.select({ id: schema.sdkEvents.id }).from(schema.sdkEvents).where(eq(schema.sdkEvents.siteId, "ret-site"))).map((r) => r.id);
+    assert.ok(!left.includes(f.id), "10-day-old event pruned on Free");
+    assert.ok(left.includes(s.id), "10-day-old event kept on Starter");
+  } finally {
+    await db.delete(schema.tenants).where(eq(schema.tenants.clerkOrgId, freeOrg));
+    await db.delete(schema.tenants).where(eq(schema.tenants.clerkOrgId, starterOrg));
+  }
+});
+
+// ---- pillars v2: tool status, console config, live agent keys -------------
+
+const tenantRow = async () =>
+  (await db.select({ id: schema.tenants.id }).from(schema.tenants).where(eq(schema.tenants.clerkOrgId, ORG)))[0]!;
+
+test("tool.surfaced events set each tool's WebMCP status (callable / failed)", async () => {
+  await app.inject({
+    method: "POST",
+    url: "/v1/sdk/tools",
+    headers: { authorization: `Bearer ${ingestKey}` },
+    payload: {
+      siteId: "shop-acme",
+      tools: [
+        { name: "search", title: "Search", description: "Search the catalogue for products by keyword.", annotations: { readOnlyHint: true }, tokens: 30 },
+        { name: "checkout", description: "Pay for the cart.", tokens: 20 }
+      ]
+    }
+  });
+  const at = new Date().toISOString();
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/sdk/events",
+    headers: { authorization: `Bearer ${ingestKey}` },
+    payload: {
+      events: [
+        { id: `evt_${randomUUID()}`, siteId: "shop-acme", sessionId: "s", occurredAt: at, type: "tool.surfaced", tool: "search", outcome: "success", metadata: { state: "published" } },
+        { id: `evt_${randomUUID()}`, siteId: "shop-acme", sessionId: "s", occurredAt: at, type: "tool.surfaced", tool: "checkout", outcome: "error", error: "TypeError: invalid inputSchema", metadata: { state: "failed" } }
+      ]
+    }
+  });
+  assert.equal(res.statusCode, 202);
+  const rows = await db
+    .select({ name: schema.sdkToolRegistry.toolName, status: schema.sdkToolRegistry.status, err: schema.sdkToolRegistry.statusError, title: schema.sdkToolRegistry.title, description: schema.sdkToolRegistry.description })
+    .from(schema.sdkToolRegistry)
+    .where(eq(schema.sdkToolRegistry.tenantId, (await tenantRow()).id));
+  const byName = Object.fromEntries(rows.map((r) => [r.name, r]));
+  assert.equal(byName.search?.status, "callable");
+  assert.equal(byName.search?.title, "Search");
+  assert.equal(byName.search?.description, "Search the catalogue for products by keyword.");
+  assert.equal(byName.checkout?.status, "failed");
+  assert.equal(byName.checkout?.err, "TypeError: invalid inputSchema");
+});
+
+test("POST /v1/sdk/config returns site rules over '*' rules, most specific first, plus approved descriptions", async () => {
+  const tenantId = (await tenantRow()).id;
+  await db.insert(schema.sdkPolicies).values([
+    { tenantId, siteId: "*", tool: "*", decision: "allow", minTrust: "detected" },
+    { tenantId, siteId: "*", tool: "checkout", decision: "deny", minTrust: "detected" },
+    { tenantId, siteId: "shop-acme", tool: "checkout", decision: "review", minTrust: "verified", allowedClasses: ["webmcp"], rateLimit: { max: 3, windowSeconds: 60 } },
+    { tenantId, siteId: "other-site", tool: "search", decision: "deny", minTrust: "detected" }
+  ]);
+  await db.insert(schema.sdkToolDescriptions).values([
+    { tenantId, siteId: "shop-acme", toolName: "search", original: "Search the catalogue for products by keyword.", suggested: "Search products by keyword.", originalTokens: 30, suggestedTokens: 22, status: "approved" },
+    { tenantId, siteId: "shop-acme", toolName: "checkout", original: "Pay for the cart.", suggested: "Pay.", originalTokens: 20, suggestedTokens: 18, status: "suggested" }
+  ]);
+  const res = await app.inject({ method: "POST", url: "/v1/sdk/config", headers: { authorization: `Bearer ${ingestKey}` }, payload: { siteId: "shop-acme" } });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.deepEqual(
+    body.policies.map((p: { tool: string; decision: string }) => [p.tool, p.decision]),
+    [["checkout", "review"], ["*", "allow"]]
+  );
+  assert.deepEqual(body.policies[0].allowedClasses, ["webmcp"]);
+  assert.deepEqual(body.policies[0].rateLimit, { max: 3, windowSeconds: 60 });
+  assert.deepEqual(body.toolDescriptions, { search: "Search products by keyword." });
+});
+
+test("POST /v1/sdk/agent-keys/verify checks console-minted keys live (revocation is immediate)", async () => {
+  const tenantId = (await tenantRow()).id;
+  const key = `agk_${randomUUID().replace(/-/g, "")}`;
+  const { createHash } = await import("node:crypto");
+  const [row] = await db
+    .insert(schema.agentKeys)
+    .values({ tenantId, agentId: "booking-agent", name: "Booking agent", vendor: "Acme", hashedKey: createHash("sha256").update(key).digest("hex"), prefix: key.slice(0, 10) })
+    .returning({ id: schema.agentKeys.id });
+  const verify = (k: string) => app.inject({ method: "POST", url: "/v1/sdk/agent-keys/verify", headers: { authorization: `Bearer ${ingestKey}` }, payload: { key: k } });
+
+  const ok = await verify(key);
+  assert.equal(ok.statusCode, 200);
+  assert.deepEqual(ok.json(), { valid: true, agentId: "booking-agent", name: "Booking agent", vendor: "Acme" });
+  assert.deepEqual((await verify("agk_not-a-real-key")).json(), { valid: false });
+
+  await db.update(schema.agentKeys).set({ revokedAt: new Date() }).where(eq(schema.agentKeys.id, row!.id));
+  assert.deepEqual((await verify(key)).json(), { valid: false });
+});
+
+// ---- public browser API (/v1/pub, publishable keys) -----------------------
+
+test("public API: publishable key reads config with ETag + CORS, writes only from allowed origins", async () => {
+  const tenantId = (await tenantRow()).id;
+  const pk = `agtx_pk_live_${randomUUID().replace(/-/g, "")}`;
+  await db.insert(schema.sdkPublishableKeys).values({ tenantId, key: pk, allowedOrigins: ["https://shop.example"] });
+  const auth = { authorization: `Bearer ${pk}` };
+
+  assert.equal((await app.inject({ method: "GET", url: "/v1/pub/health" })).statusCode, 401);
+  assert.equal((await app.inject({ method: "GET", url: "/v1/pub/health", headers: { authorization: "Bearer agtx_pk_nope" } })).statusCode, 401);
+  assert.deepEqual((await app.inject({ method: "GET", url: "/v1/pub/health", headers: auth })).json(), { status: "ok", service: "agentronics-api" });
+
+  // reads: policies (same rules as /v1/sdk/config), CORS for any origin, ETag → 304
+  const pol = await app.inject({ method: "GET", url: "/v1/pub/sites/shop-acme/policies", headers: { ...auth, origin: "https://anything.example" } });
+  assert.equal(pol.statusCode, 200);
+  assert.equal(pol.headers["access-control-allow-origin"], "https://anything.example");
+  assert.deepEqual(pol.json().policies.map((p: { tool: string }) => p.tool), ["checkout", "*"]);
+  const again = await app.inject({ method: "GET", url: "/v1/pub/sites/shop-acme/policies", headers: { ...auth, "if-none-match": String(pol.headers.etag) } });
+  assert.equal(again.statusCode, 304);
+  const cfg = await app.inject({ method: "GET", url: "/v1/pub/sites/shop-acme/config", headers: auth });
+  assert.deepEqual(cfg.json().toolDescriptions, { search: "Search products by keyword." });
+
+  // preflight
+  const pre = await app.inject({ method: "OPTIONS", url: "/v1/pub/traces", headers: { origin: "https://shop.example", "access-control-request-method": "POST" } });
+  assert.equal(pre.statusCode, 204);
+  assert.match(String(pre.headers["access-control-allow-headers"]), /authorization/);
+
+  // writes: wrong / missing origin refused; allowed origin accepted
+  const event = { id: `evt_${randomUUID()}`, siteId: "shop-acme", sessionId: "s", occurredAt: new Date().toISOString(), type: "agent.detected", outcome: "success", metadata: {} };
+  assert.equal((await app.inject({ method: "POST", url: "/v1/pub/traces", headers: auth, payload: { events: [event] } })).statusCode, 403);
+  assert.equal((await app.inject({ method: "POST", url: "/v1/pub/traces", headers: { ...auth, origin: "https://evil.example" }, payload: { events: [event] } })).statusCode, 403);
+  const ok = await app.inject({ method: "POST", url: "/v1/pub/traces", headers: { ...auth, origin: "https://shop.example" }, payload: { events: [event] } });
+  assert.equal(ok.statusCode, 202);
+  assert.equal(ok.json().accepted, 1);
+
+  const tools = await app.inject({
+    method: "PUT",
+    url: "/v1/pub/sites/shop-acme/tools",
+    headers: { ...auth, origin: "https://shop.example" },
+    payload: { registry: { tools: [{ name: "track_order", description: "Track an order.", tokens: 12 }] } }
+  });
+  assert.equal(tools.statusCode, 202);
+  const [row] = await db
+    .select({ name: schema.sdkToolRegistry.toolName })
+    .from(schema.sdkToolRegistry)
+    .where(and(eq(schema.sdkToolRegistry.tenantId, tenantId), eq(schema.sdkToolRegistry.toolName, "track_order")));
+  assert.equal(row?.name, "track_order");
+});
+
+test("public API: a revoked publishable key stops working", async () => {
+  const tenantId = (await tenantRow()).id;
+  const pk = `agtx_pk_live_${randomUUID().replace(/-/g, "")}`;
+  const local = buildServer({ db, auth: clerkVerifier({ issuer: ISSUER, getKey: jwkSet }) });
+  await local.ready();
+  await db.insert(schema.sdkPublishableKeys).values({ tenantId, key: pk, revokedAt: new Date() });
+  assert.equal((await local.inject({ method: "GET", url: "/v1/pub/health", headers: { authorization: `Bearer ${pk}` } })).statusCode, 401);
+  await local.close();
 });

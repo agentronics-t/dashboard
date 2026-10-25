@@ -5,30 +5,24 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logomark } from "./Logomark";
 
-// Agent authentication console. Sections mirror a user-auth console's
-// (overview → identities → configure → workspace), applied to agents.
-const SECTIONS: { label: string | null; items: { href: string; label: string; icon: string }[] }[] = [
-  { label: null, items: [{ href: "/overview", label: "Overview", icon: "grid" }] },
-  {
-    label: "Agents",
-    items: [
-      { href: "/agents", label: "Agents", icon: "users" },
-      { href: "/logs", label: "Auth logs", icon: "list" }
-    ]
-  },
-  {
-    label: "Configure",
-    items: [
-      { href: "/configure/authentication", label: "Authentication", icon: "key" },
-      { href: "/configure/api-keys", label: "API keys", icon: "code" }
-    ]
-  }
+// Agent Nick sits above the SDK pillars: it's where a site gets its WebMCP tools.
+const AGENT_NAV = [{ href: "/agent-nick", label: "Agent Nick", icon: "bot" }];
+
+// Agentronics is one product now — the SDK and the dashboard it feeds.
+// Fed by events streamed to the intel-api SDK ingest endpoint; each page
+// shows an empty state until the customer connects an ingest key.
+const SDK_NAV = [
+  { href: "/detect", label: "Detect", icon: "radar" },
+  { href: "/auth", label: "Auth", icon: "key" },
+  { href: "/authz", label: "Authz", icon: "shield" },
+  { href: "/webmcp-tools", label: "WebMCP Tools", icon: "plug" },
+  { href: "/knaph", label: "Memory", icon: "brain" },
+  { href: "/logs", label: "Observability", icon: "list" },
+  { href: "/analytics", label: "Analytics", icon: "chart" }
 ];
 
 const BOTTOM = [
-  { href: "/billing", label: "Billing", icon: "card" },
   { href: "/settings", label: "Settings", icon: "gear" },
-  { href: "/help", label: "Help", icon: "help" },
   { href: "/account", label: "Account", icon: "user" }
 ];
 
@@ -36,6 +30,7 @@ const ICONS: Record<string, React.ReactElement> = {
   grid: <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />,
   trend: <path d="M3 17l5-5 4 3 8-9" />,
   spark: <path d="M12 3l2.2 6.3L20 11l-5.8 1.7L12 19l-2.2-6.3L4 11l5.8-1.7z" />,
+  bot: <path d="M12 3v3M8 7h8a4 4 0 014 4v4a4 4 0 01-4 4H8a4 4 0 01-4-4v-4a4 4 0 014-4zM9.5 12.5v1M14.5 12.5v1M2 12v3M22 12v3" />,
   plug: <path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 01-10 0zM12 16v6" />,
   chat: <path d="M4 5h16v11H8l-4 4z" />,
   radar: <path d="M12 12l6-4M12 21a9 9 0 109-9M12 12a4 4 0 104 4" />,
@@ -46,10 +41,6 @@ const ICONS: Record<string, React.ReactElement> = {
   chart: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   gear: <path d="M12 9a3 3 0 100 6 3 3 0 000-6zM4 12h2M18 12h2M12 4v2M12 18v2" />,
   user: <path d="M12 12a4 4 0 100-8 4 4 0 000 8zM5 21a7 7 0 0114 0" />,
-  users: <path d="M9 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM2.5 20a6.5 6.5 0 0113 0M16 4.5a3.5 3.5 0 010 6.5M18 14a6.5 6.5 0 013.5 6" />,
-  code: <path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14" />,
-  card: <path d="M3 6h18v12H3zM3 10h18M7 15h3" />,
-  help: <path d="M12 21a9 9 0 100-18 9 9 0 000 18zM9.5 9.5a2.5 2.5 0 114 2c-.9.6-1.5 1.1-1.5 2.2M12 17h.01" />,
   chevron: <path d="M15 6l-6 6 6 6" />,
   sun: <path d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M19 19l-1.5-1.5M5 19l1.5-1.5M19 5l-1.5 1.5" />,
   moon: <path d="M20 14A8 8 0 119 3a6 6 0 0011 11z" />
@@ -70,6 +61,8 @@ export function Sidebar() {
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains("dark"));
+    // Phones: start collapsed so the page gets the width.
+    if (window.matchMedia("(max-width: 760px)").matches) setOpen(false);
   }, []);
 
   const toggleTheme = () => {
@@ -91,7 +84,7 @@ export function Sidebar() {
   };
 
   const NavBtn = ({ href, label, icon }: { href: string; label: string; icon: string }) => (
-    <Link href={href} className="ag-nav-btn" data-active={pathname.startsWith(href)} title={label} style={{ justifyContent: open ? "flex-start" : "center" }}>
+    <Link href={href} className="ag-nav-btn" data-active={pathname === href || pathname.startsWith(`${href}/`)} title={label} style={{ justifyContent: open ? "flex-start" : "center" }}>
       <Icon name={icon} />
       <span style={labelStyle}>{label}</span>
     </Link>
@@ -99,10 +92,12 @@ export function Sidebar() {
 
   return (
     <aside
+      className="ag-pcb"
       style={{
         width: open ? 244 : 68,
         flex: "none",
-        background: "var(--surface)",
+        background: "var(--canvas)",
+        color: "var(--content)",
         borderRight: "1px solid var(--border)",
         padding: 14,
         display: "flex",
@@ -114,26 +109,19 @@ export function Sidebar() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 6px 2px", minHeight: 40 }}>
-        <Logomark size={26} onDark={dark} />
+        <Logomark size={24} />
         {open && (
           <div>
-            <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: "-0.02em", lineHeight: 1.1 }}>agentronics</div>
-            <div style={{ fontSize: 11, color: "var(--content-muted)", letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 600 }}>Agent auth</div>
+            <div style={{ fontFamily: "var(--font-heading)", fontWeight: 700, fontSize: 17, letterSpacing: "-0.02em", lineHeight: 1.1 }}>agentronics</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--content-muted)", letterSpacing: "0.1em", textTransform: "uppercase", marginTop: 2 }}>Console</div>
           </div>
         )}
       </div>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 22, flex: 1, minHeight: 0, overflowY: "auto" }}>
-        {SECTIONS.map((sec, i) => (
-          <div key={sec.label ?? i} style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: i === 0 ? 0 : 14 }}>
-            {sec.label && open && (
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--content-muted)", padding: "4px 11px" }}>
-                {sec.label}
-              </div>
-            )}
-            {sec.items.map((n) => <NavBtn key={n.href} {...n} />)}
-          </div>
-        ))}
+        {AGENT_NAV.map((n) => <NavBtn key={n.href} {...n} />)}
+        <div style={{ borderTop: "1px solid var(--border)", margin: "8px 4px" }} />
+        {SDK_NAV.map((n) => <NavBtn key={n.href} {...n} />)}
       </nav>
 
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>

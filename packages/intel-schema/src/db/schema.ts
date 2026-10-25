@@ -254,6 +254,27 @@ export const sdkIngestKeys = pgTable(
   ]
 );
 
+// Browser-safe publishable keys (agtx_pk_…) for the SDK's public API
+// (/v1/pub/*): policy + site-memory sync, tool registry, traces, health.
+// Public by design, so the key itself is stored. Writes are only accepted
+// from the key's allowed origins; with none set, the key is read-only.
+export const sdkPublishableKeys = pgTable(
+  "sdk_publishable_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull().default("default"),
+    allowedOrigins: jsonb("allowed_origins").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true })
+  },
+  (t) => [uniqueIndex("sdk_publishable_keys_key_uq").on(t.key), index("sdk_publishable_keys_tenant_idx").on(t.tenantId)]
+);
+
 // Append-only raw event log. PK = SDK-provided event id → idempotent ingest.
 export const sdkEvents = pgTable(
   "sdk_events",
@@ -327,16 +348,75 @@ export const sdkToolRegistry = pgTable(
       .references(() => tenants.id, { onDelete: "cascade" }),
     siteId: text("site_id").notNull(),
     toolName: text("tool_name").notNull(),
+    title: text("title"),
+    // The description in the site's code (what Procedural memory optimises).
+    description: text("description"),
     groupName: text("group_name"),
     page: text("page"),
     inputSchema: jsonb("input_schema").notNull().default({}),
     outputSchema: jsonb("output_schema"),
+    annotations: jsonb("annotations"),
     tokens: integer("tokens").notNull().default(0),
+    // From the browser's last WebMCP registration (tool.surfaced events):
+    // callable | failed | disabled | unknown (never published yet).
+    status: text("status").notNull().default("unknown"),
+    statusError: text("status_error"),
+    statusAt: timestamp("status_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
   },
   (t) => [uniqueIndex("sdk_tool_registry_uq").on(t.tenantId, t.siteId, t.toolName)]
+);
+
+// Authorization rules managed in the console (Authz page). The SDK pulls them
+// with createDashboardSync().pullConfig(). siteId "*" applies to every site.
+// decision: allow | deny | review. minTrust: detected | declared | verified | linked.
+export const sdkPolicies = pgTable(
+  "sdk_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    siteId: text("site_id").notNull().default("*"),
+    tool: text("tool").notNull(), // tool name or glob (cart.*)
+    decision: text("decision").notNull(),
+    minTrust: text("min_trust").notNull().default("detected"),
+    allowedClasses: jsonb("allowed_classes").notNull().default([]),
+    rateLimit: jsonb("rate_limit"), // { max, windowSeconds }
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex("sdk_policies_uq").on(t.tenantId, t.siteId, t.tool),
+    index("sdk_policies_tenant_idx").on(t.tenantId)
+  ]
+);
+
+// Procedural memory: AI-written tool descriptions. A suggestion is shown next
+// to the original with both token counts; once approved, pullConfig() hands it
+// to the SDK, which publishes it to agents in place of the code's description.
+export const sdkToolDescriptions = pgTable(
+  "sdk_tool_descriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    siteId: text("site_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    original: text("original").notNull(),
+    suggested: text("suggested").notNull(),
+    originalTokens: integer("original_tokens").notNull(),
+    suggestedTokens: integer("suggested_tokens").notNull(),
+    rationale: text("rationale"),
+    status: text("status").notNull().default("suggested"), // suggested | approved | rejected
+    model: text("model"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true })
+  },
+  (t) => [uniqueIndex("sdk_tool_descriptions_uq").on(t.tenantId, t.siteId, t.toolName)]
 );
 
 // Latest site-memory snapshot + quality score per site (Knaph page).
@@ -452,9 +532,10 @@ export const billingEvents = pgTable("billing_events", {
 });
 
 // ---- agent API keys (agk_…) --------------------------------------------------
-// Minted in the console's Configure → API keys. Only the SHA-256 is stored;
-// the customer's middleware verifies keys with staticKeyVerifier() over the
-// AGENT_KEYS map the console exports (hash → identity).
+// Minted in the console's Auth page. Only the SHA-256 is stored. The customer's
+// middleware verifies keys live with createDashboardSync().keyVerifier()
+// (POST /v1/sdk/agent-keys/verify), or offline with staticKeyVerifier() over
+// the AGENT_KEYS map the console exports (hash → identity).
 export const agentKeys = pgTable(
   "agent_keys",
   {
@@ -468,6 +549,7 @@ export const agentKeys = pgTable(
     hashedKey: text("hashed_key").notNull(), // sha256 hex (matches hashAgentKey)
     prefix: text("prefix").notNull(), // agk_ + first 6 chars, for display
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true })
   },
   (t) => [
@@ -475,3 +557,175 @@ export const agentKeys = pgTable(
     index("agent_keys_tenant_idx").on(t.tenantId)
   ]
 );
+
+// ---- Agent Nick (GitHub → WebMCP pipeline) -----------------------------------
+// The console's Agent Nick reads a customer's repo through our GitHub App,
+// proposes WebMCP tools, and opens a PR. The agent-nick service writes these
+// rows; the dashboard only reads them (plus the tenant's own review decision).
+
+/** One row per GitHub App installation a tenant linked (verified via the user's GitHub OAuth). */
+export const githubInstallations = pgTable(
+  "github_installations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    installationId: bigint("installation_id", { mode: "number" }).notNull(),
+    accountLogin: text("account_login").notNull(),
+    accountType: text("account_type").notNull(), // User | Organization
+    repositorySelection: text("repository_selection").notNull(), // all | selected
+    installedBy: text("installed_by"), // Clerk user id
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true })
+  },
+  (t) => [
+    uniqueIndex("github_installations_tenant_inst_uq").on(t.tenantId, t.installationId),
+    index("github_installations_inst_idx").on(t.installationId)
+  ]
+);
+
+/** A repo the tenant handed to Agent Nick — the "site" on the Agent overview. */
+export const agentNickSites = pgTable(
+  "agent_nick_sites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    installationId: bigint("installation_id", { mode: "number" }).notNull(),
+    repoId: bigint("repo_id", { mode: "number" }).notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    defaultBranch: text("default_branch").notNull(),
+    isPrivate: boolean("is_private").notNull().default(true),
+    homepage: text("homepage"),
+    framework: text("framework"),
+    // new | running | awaiting_review | pr_open | live | failed
+    status: text("status").notNull().default("new"),
+    lastRunId: uuid("last_run_id"),
+    liveSha: text("live_sha"), // merge commit that put the tools live
+    liveAt: timestamp("live_at", { withTimezone: true }),
+    liveTools: integer("live_tools").notNull().default(0),
+    // Latest push to the default branch (GitHub push webhook) — "last push" on the overview.
+    lastPushSha: text("last_push_sha"),
+    lastPushAt: timestamp("last_push_at", { withTimezone: true }),
+    lastPushBy: text("last_push_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex("agent_nick_sites_tenant_repo_uq").on(t.tenantId, t.repoId),
+    index("agent_nick_sites_repo_idx").on(t.repoId)
+  ]
+);
+
+/** One pipeline run (scan → propose → review → write → PR). LangGraph checkpoints live in their own schema. */
+export const agentNickRuns = pgTable(
+  "agent_nick_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    siteId: uuid("site_id")
+      .notNull()
+      .references(() => agentNickSites.id, { onDelete: "cascade" }),
+    // queued | running | awaiting_review | pr_open | merged | closed | failed | cancelled
+    status: text("status").notNull().default("queued"),
+    step: text("step").notNull().default("queued"), // current pipeline step id
+    baseSha: text("base_sha"),
+    framework: text("framework"),
+    pagesFound: integer("pages_found").notNull().default(0),
+    actionsFound: integer("actions_found").notNull().default(0),
+    toolsProposed: integer("tools_proposed").notNull().default(0),
+    toolsApproved: integer("tools_approved").notNull().default(0),
+    filesChanged: integer("files_changed").notNull().default(0),
+    additions: integer("additions").notNull().default(0),
+    deletions: integer("deletions").notNull().default(0),
+    branch: text("branch"),
+    prNumber: integer("pr_number"),
+    prUrl: text("pr_url"),
+    headSha: text("head_sha"),
+    ciStatus: text("ci_status"), // pending | success | failure | none
+    fixAttempts: integer("fix_attempts").notNull().default(0),
+    decision: jsonb("decision"), // the tenant's review: approved tools + auth + plan
+    tokensIn: integer("tokens_in").notNull().default(0),
+    tokensOut: integer("tokens_out").notNull().default(0),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    error: text("error"),
+    createdBy: text("created_by"), // Clerk user id
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    mergedAt: timestamp("merged_at", { withTimezone: true })
+  },
+  (t) => [
+    index("agent_nick_runs_site_idx").on(t.siteId, t.createdAt),
+    index("agent_nick_runs_tenant_idx").on(t.tenantId, t.createdAt),
+    index("agent_nick_runs_pr_idx").on(t.prNumber)
+  ]
+);
+
+/** Append-only step log — drives the live pipeline view. */
+export const agentNickEvents = pgTable(
+  "agent_nick_events",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentNickRuns.id, { onDelete: "cascade" }),
+    step: text("step").notNull(),
+    kind: text("kind").notNull(), // start | done | fail | info | wait
+    message: text("message").notNull(),
+    data: jsonb("data"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [index("agent_nick_events_run_idx").on(t.runId, t.id)]
+);
+
+/** Tools a run proposed; `approved` is set from the review, `filePath` once written. */
+export const agentNickTools = pgTable(
+  "agent_nick_tools",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentNickRuns.id, { onDelete: "cascade" }),
+    siteId: uuid("site_id")
+      .notNull()
+      .references(() => agentNickSites.id, { onDelete: "cascade" }),
+    page: text("page").notNull(), // route, e.g. /checkout
+    name: text("name").notNull(),
+    kind: text("kind").notNull(), // form (declarative) | script (registerTool)
+    description: text("description").notNull(),
+    inputSchema: jsonb("input_schema").notNull(),
+    risk: text("risk").notNull(), // read | write | payment | destructive
+    readOnly: boolean("read_only").notNull().default(false),
+    consequential: boolean("consequential").notNull().default(false),
+    auth: text("auth").notNull().default("public"), // public | signed_in | scoped
+    source: jsonb("source").notNull(), // where in the code the action lives
+    approved: boolean("approved").notNull().default(true),
+    filePath: text("file_path"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    uniqueIndex("agent_nick_tools_run_name_uq").on(t.runId, t.name),
+    index("agent_nick_tools_site_idx").on(t.siteId)
+  ]
+);
+
+/** The workspace's paid plan (Dodo Payments subscription). One row per tenant. */
+export const workspacePlans = pgTable("workspace_plans", {
+  tenantId: uuid("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  plan: text("plan").notNull(), // lite | starter | team | business
+  // active | on_hold | cancelled | failed | expired | pending
+  status: text("status").notNull(),
+  dodoSubscriptionId: text("dodo_subscription_id"),
+  dodoCustomerId: text("dodo_customer_id"),
+  checkoutSessionId: text("checkout_session_id"), // pending checkout, confirmed on return/webhook
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});

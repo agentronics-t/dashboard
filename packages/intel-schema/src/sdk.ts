@@ -25,6 +25,28 @@ export function isIngestKey(token: string): boolean {
   return token.startsWith(SDK_INGEST_KEY_PREFIX);
 }
 
+// Browser-safe publishable keys for the SDK's public API (/v1/pub/*).
+export const SDK_PUBLISHABLE_KEY_PREFIX = "agtx_pk_";
+
+export function generatePublishableKey(): string {
+  return SDK_PUBLISHABLE_KEY_PREFIX + "live_" + randomBytes(18).toString("base64url");
+}
+
+export function isPublishableKey(token: string): boolean {
+  return token.startsWith(SDK_PUBLISHABLE_KEY_PREFIX);
+}
+
+/** "https://Shop.example/" → "https://shop.example"; null if it isn't an http(s) origin. */
+export function normaliseOrigin(value: string): string | null {
+  try {
+    const u = new URL(value.trim());
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
 export const TRACE_EVENT_TYPES = [
   "agent.detected",
   "agent.missed",
@@ -92,6 +114,9 @@ export type SdkTraceBatch = z.infer<typeof sdkTraceBatch>;
 // registry + provideSiteMemory() snapshot.
 export const sdkToolDescriptor = z.object({
   name: z.string().min(1),
+  title: z.string().max(200).optional(),
+  description: z.string().max(8000).optional(),
+  annotations: z.record(z.string(), z.boolean()).optional(),
   group: z.string().nullable().optional(),
   page: z.string().nullable().optional(),
   inputSchema: z.record(z.string(), z.unknown()).optional(),
@@ -112,3 +137,44 @@ export const sdkMemoryPush = z.object({
   score: z.number().int().min(0).max(100).nullable().optional()
 });
 export type SdkMemoryPush = z.infer<typeof sdkMemoryPush>;
+
+// ---- console-managed config the SDK pulls (POST /v1/sdk/config) -------------
+export const POLICY_DECISIONS = ["allow", "deny", "review"] as const;
+export const TRUST_LEVELS = ["detected", "declared", "verified", "linked"] as const;
+export const AGENT_CLASSES = ["webmcp", "dom", "screenshot", "crawler"] as const;
+
+/** One authorization rule, shaped like @agentronics/protocol PolicyRule. */
+export const sdkPolicyRule = z.object({
+  id: z.string(),
+  tool: z.string().min(1).max(200),
+  decision: z.enum(POLICY_DECISIONS),
+  minTrust: z.enum(TRUST_LEVELS),
+  allowedClasses: z.array(z.enum(AGENT_CLASSES)).default([]),
+  rateLimit: z
+    .object({ max: z.number().int().positive(), windowSeconds: z.number().int().positive() })
+    .optional()
+});
+export type SdkPolicyRule = z.infer<typeof sdkPolicyRule>;
+
+export const sdkConfigRequest = z.object({ siteId: z.string().min(1) });
+export const sdkAgentKeyVerify = z.object({ key: z.string().min(8).max(200) });
+
+/** A rule as edited in the console's Authz page. siteId "*" = every site. */
+export const sdkPolicyInput = z.object({
+  id: z.string().uuid().optional(),
+  siteId: z.string().trim().min(1).max(120).default("*"),
+  tool: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[A-Za-z0-9_.:*-]+$/, "Tool names use letters, numbers, _ . : - and * as a wildcard."),
+  decision: z.enum(POLICY_DECISIONS),
+  minTrust: z.enum(TRUST_LEVELS),
+  allowedClasses: z.array(z.enum(AGENT_CLASSES)).default([]),
+  rateLimit: z
+    .object({ max: z.number().int().positive().max(100_000), windowSeconds: z.number().int().positive().max(86_400) })
+    .nullable()
+    .default(null)
+});
+export type SdkPolicyInput = z.input<typeof sdkPolicyInput>;

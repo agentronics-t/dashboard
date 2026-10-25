@@ -15,7 +15,6 @@ const app = buildServer({
   intelligence: env.ENABLE_INTELLIGENCE
     ? { tasks: new GcpTaskQueue(env), secrets: new GcpSecretStore(env.GCP_PROJECT!) }
     : undefined,
-  retentionDays: env.RETENTION_DAYS,
   internalAuth:
     env.SCHEDULER_SA && env.API_AUDIENCE
       ? googleOidcVerifier({
