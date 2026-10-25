@@ -49,12 +49,15 @@ export function PolicyEditor({
   sites,
   limit,
   used,
-  locked
+  locked,
+  rateLimitsIncluded = true
 }: {
   rules: PolicyRow[];
   /** Tool names from the synced registry, for autocomplete. */
   tools: string[];
   sites: string[];
+  /** Per-agent rate limits are a Pro feature; off = the checkbox is disabled with an upgrade note. */
+  rateLimitsIncluded?: boolean;
   /** "Unlimited" or the number of rules the plan allows. */
   limit: string;
   used: number;
@@ -243,9 +246,11 @@ export function PolicyEditor({
                 <input
                   type="checkbox"
                   checked={!!draft.rateLimit}
+                  disabled={!rateLimitsIncluded && !draft.rateLimit}
                   onChange={(e) => setDraft({ ...draft, rateLimit: e.target.checked ? { max: 10, windowSeconds: 60 } : null })}
                 />
                 Rate limit each agent to
+                {!rateLimitsIncluded && !draft.rateLimit && <span className="ag-muted"> (Pro plan)</span>}
                 {draft.rateLimit && (
                   <>
                     <input

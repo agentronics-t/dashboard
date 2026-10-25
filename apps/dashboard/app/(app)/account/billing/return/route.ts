@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { isBillingInterval, isPaidPlanId } from "@agentronics/intel-schema";
 import { schema } from "@agentronics/intel-schema/db";
 import { dodo, planStatus } from "@/lib/billing";
+import { syncSeats } from "@/lib/seats";
 import { db, getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +46,7 @@ export async function GET(req: Request) {
         updatedAt: new Date()
       })
       .where(eq(schema.workspacePlans.tenantId, tenantId));
+    await syncSeats(tenantId, sub && planStatus(sub.status) !== "active" ? "free" : plan);
     return dest("active");
   } catch {
     return dest("unknown");

@@ -56,6 +56,7 @@ export default async function AuthzPage() {
           limit={limitLabel(max)}
           used={rules.length}
           locked={locked}
+          rateLimitsIncluded={plan.features.rateLimits}
         />
       </Card>
 

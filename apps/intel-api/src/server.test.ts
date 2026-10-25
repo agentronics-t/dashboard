@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { createDb, schema } from "@agentronics/intel-schema/db";
 import { AuthError, clerkVerifier } from "./auth.ts";
 import { buildServer } from "./server.ts";
@@ -602,6 +602,8 @@ test("tool.surfaced events set each tool's WebMCP status (callable / failed)", a
 
 test("POST /v1/sdk/config returns site rules over '*' rules, most specific first, plus approved descriptions", async () => {
   const tenantId = (await tenantRow()).id;
+  // Pro: every rule, rate limits and descriptions are served (Free and Starter are gated, see below).
+  await db.insert(schema.workspacePlans).values({ tenantId, plan: "pro", status: "active" }).onConflictDoUpdate({ target: schema.workspacePlans.tenantId, set: { plan: "pro", status: "active" } });
   await db.insert(schema.sdkPolicies).values([
     { tenantId, siteId: "*", tool: "*", decision: "allow", minTrust: "detected" },
     { tenantId, siteId: "*", tool: "checkout", decision: "deny", minTrust: "detected" },
@@ -622,6 +624,49 @@ test("POST /v1/sdk/config returns site rules over '*' rules, most specific first
   assert.deepEqual(body.policies[0].allowedClasses, ["webmcp"]);
   assert.deepEqual(body.policies[0].rateLimit, { max: 3, windowSeconds: 60 });
   assert.deepEqual(body.toolDescriptions, { search: "Search products by keyword." });
+});
+
+test("plans: Free gets no console rules, descriptions or memory; Starter gets its first 5 rules without rate limits", async () => {
+  const seed = async (tenantId: string) => {
+    await db.insert(schema.sdkPolicies).values(
+      Array.from({ length: 7 }, (_, i) => ({
+        tenantId,
+        siteId: "shop",
+        tool: `tool_${i}`,
+        decision: "deny",
+        minTrust: "detected",
+        rateLimit: { max: 3, windowSeconds: 60 },
+        createdAt: new Date(Date.UTC(2026, 0, 1 + i))
+      }))
+    );
+    await db.insert(schema.sdkToolDescriptions).values({ tenantId, siteId: "shop", toolName: "tool_0", original: "Long text.", suggested: "Short.", originalTokens: 9, suggestedTokens: 3, status: "approved" });
+    await db.insert(schema.sdkSiteMemory).values({ tenantId, siteId: "shop", snapshot: { pages: 3 } });
+  };
+  const config = (key: string) => app.inject({ method: "POST", url: "/v1/sdk/config", headers: { authorization: `Bearer ${key}` }, payload: { siteId: "shop" } }).then((r) => r.json());
+
+  const free = await tenantWithKey(`org_free_${randomUUID()}`);
+  const starter = await tenantWithKey(`org_starter_${randomUUID()}`, "starter");
+  try {
+    await seed(free.tenantId);
+    await seed(starter.tenantId);
+
+    const f = await config(free.key);
+    assert.deepEqual(f.policies, []);
+    assert.deepEqual(f.toolDescriptions, {});
+    assert.equal(f.siteMemory, null);
+
+    const st = await config(starter.key);
+    assert.deepEqual(
+      st.policies.map((p: { tool: string }) => p.tool).sort(),
+      ["tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
+      "the 5 oldest rules"
+    );
+    assert.ok(st.policies.every((p: { rateLimit?: unknown }) => p.rateLimit === undefined), "rate limits are Pro");
+    assert.deepEqual(st.toolDescriptions, { tool_0: "Short." });
+    assert.deepEqual(st.siteMemory, { pages: 3 });
+  } finally {
+    await db.delete(schema.tenants).where(inArray(schema.tenants.id, [free.tenantId, starter.tenantId]));
+  }
 });
 
 test("POST /v1/sdk/agent-keys/verify checks console-minted keys live (revocation is immediate)", async () => {

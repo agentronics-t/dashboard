@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   sdkTraceBatch,
@@ -85,6 +85,18 @@ export function buildServer(deps: ServerDeps) {
         if (hit) hit.used += n;
       }
     };
+  }
+
+  // The tenant's effective plan, cached briefly: siteConfig runs on every SDK
+  // config pull, and a downgrade should reach sites within a minute.
+  const planCache = new Map<string, { at: number; plan: PlanId }>();
+  async function tenantPlan(tenantId: string): Promise<PlanId> {
+    const hit = planCache.get(tenantId);
+    if (hit && Date.now() - hit.at < 60_000) return hit.plan;
+    const [row] = await db.select().from(schema.workspacePlans).where(eq(schema.workspacePlans.tenantId, tenantId));
+    const plan = resolvePlan(row, now());
+    planCache.set(tenantId, { at: Date.now(), plan });
+    return plan;
   }
 
   // ---- shared SDK operations (ingest-key routes + the public browser API) ----
@@ -230,10 +242,18 @@ export function buildServer(deps: ServerDeps) {
    * latest site-memory snapshot.
    */
   async function siteConfig(tenantId: string, siteId: string) {
-    const rows = await db
+    // Plan limits are enforced here, where every SDK pulls its config, so a
+    // site only receives what its plan pays for (also after a downgrade).
+    // Agents are never blocked: without a paid rule a tool simply has no rule.
+    const spec = PLANS[await tenantPlan(tenantId)];
+    const policyLimit = spec.limits.authzPolicies;
+    const allRows = await db
       .select()
       .from(schema.sdkPolicies)
-      .where(and(eq(schema.sdkPolicies.tenantId, tenantId), inArray(schema.sdkPolicies.siteId, ["*", siteId])));
+      .where(and(eq(schema.sdkPolicies.tenantId, tenantId), inArray(schema.sdkPolicies.siteId, ["*", siteId])))
+      .orderBy(asc(schema.sdkPolicies.createdAt));
+    // The oldest rules count first; rules over the plan's limit are not served.
+    const rows = policyLimit === null ? allRows : allRows.slice(0, policyLimit);
     const byTool = new Map<string, (typeof rows)[number]>();
     for (const r of rows) if (!byTool.has(r.tool) || r.siteId !== "*") byTool.set(r.tool, r);
     // Most specific patterns first so "cart.checkout" beats "cart.*" beats "*".
@@ -249,10 +269,12 @@ export function buildServer(deps: ServerDeps) {
           allowedClasses: (r.allowedClasses as SdkPolicyRule["allowedClasses"]) ?? []
         };
         const rl = r.rateLimit as SdkPolicyRule["rateLimit"] | null;
-        if (rl) rule.rateLimit = rl;
+        if (rl && spec.features.rateLimits) rule.rateLimit = rl;
         return rule;
       });
-    const descriptions = await db
+    // Procedural memory (approved descriptions) and site memory are Starter+.
+    const memoryIncluded = spec.features.siteMemory;
+    const descriptions = !memoryIncluded ? [] : await db
       .select({ tool: schema.sdkToolDescriptions.toolName, text: schema.sdkToolDescriptions.suggested })
       .from(schema.sdkToolDescriptions)
       .where(
@@ -262,7 +284,7 @@ export function buildServer(deps: ServerDeps) {
           eq(schema.sdkToolDescriptions.status, "approved")
         )
       );
-    const [memory] = await db
+    const [memory] = !memoryIncluded ? [] : await db
       .select({ snapshot: schema.sdkSiteMemory.snapshot })
       .from(schema.sdkSiteMemory)
       .where(and(eq(schema.sdkSiteMemory.tenantId, tenantId), eq(schema.sdkSiteMemory.siteId, siteId)));
