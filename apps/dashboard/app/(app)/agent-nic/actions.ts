@@ -1,8 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { eq } from "drizzle-orm";
+import { schema } from "@agentronics/intel-schema/db";
 import { NickError, nickFetch } from "@/lib/agentNick";
-import { getTenantId, requireWorkspaceAdmin } from "@/lib/tenant";
+import { getSiteUrl, normaliseSiteUrl, recordScan } from "@/lib/siteScore";
+import { db, getTenantId, requireWorkspaceAdmin } from "@/lib/tenant";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
 
@@ -45,6 +49,9 @@ export async function startOnRepo(installationId: number, repoId: number): Promi
 async function startRun(siteId: string, tenantId: string): Promise<{ runId: string }> {
   try {
     const out = await nickFetch<{ runId: string }>(`/v1/sites/${siteId}/runs`, { method: "POST", tenantId });
+    // The "before" score for this run, taken while the run reads the code.
+    const siteUrl = await getSiteUrl(tenantId);
+    if (siteUrl) after(() => recordScan(tenantId, siteUrl, "before", out.runId));
     revalidatePath("/agent-nic");
     return out;
   } catch (err) {
@@ -86,5 +93,29 @@ export async function acceptRun(runId: string): Promise<ActionResult> {
     revalidatePath(`/agent-nic/runs/${runId}`);
     revalidatePath("/agent-nic");
     return {};
+  });
+}
+
+/** Save the workspace's website and score it (the first scan). */
+export async function saveSiteUrl(raw: string): Promise<ActionResult<{ score: number | null }>> {
+  return guard(async (tenantId) => {
+    const url = normaliseSiteUrl(raw);
+    if (!url) throw new Error("That doesn't look like a website address. Try something like yourcompany.com.");
+    await db().update(schema.tenants).set({ siteUrl: url }).where(eq(schema.tenants.id, tenantId));
+    const scan = await recordScan(tenantId, url, "first");
+    revalidatePath("/agent-nic");
+    return { score: scan?.score ?? null };
+  });
+}
+
+/** Score the site again now. */
+export async function rescanSite(): Promise<ActionResult<{ score: number | null }>> {
+  return guard(async (tenantId) => {
+    const url = await getSiteUrl(tenantId);
+    if (!url) throw new Error("Add your website first.");
+    const scan = await recordScan(tenantId, url, "manual");
+    if (!scan) throw new Error("We couldn't scan your site just now. Try again in a minute.");
+    revalidatePath("/agent-nic");
+    return { score: scan.score };
   });
 }

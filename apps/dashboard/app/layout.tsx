@@ -15,6 +15,12 @@ export const metadata: Metadata = {
 
 const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
+// Sign-in also signs new people up (withSignUp), so say so. Keep in step with
+// the copy in components/AuthStaticCard.tsx.
+const CLERK_LOCALIZATION = {
+  signIn: { start: { titleCombined: "Sign in to agentronics", subtitleCombined: "New here? We’ll create your account." } }
+};
+
 // Clerk's sign-in, user menu and org switcher in the design system: lime
 // primary with ink text, white surfaces, the same fonts.
 const CLERK_APPEARANCE = {
@@ -67,6 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return hasClerk ? (
     <ClerkProvider
       appearance={CLERK_APPEARANCE}
+      localization={CLERK_LOCALIZATION}
       clerkJSVersion={CLERK_JS_VERSION}
       signInUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || "/sign-in"}
       signUpUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || "/sign-up"}

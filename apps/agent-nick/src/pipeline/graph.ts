@@ -183,6 +183,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
 
   const siteFiles = step("site", "Checking robots.txt, llms.txt, sitemap, structured data, Markdown, labels and the SDK", async (s, r, llm) => {
     const { reader, gh, site: row } = await repo(s);
+    const [tenant] = await db.select({ siteUrl: schema.tenants.siteUrl }).from(schema.tenants).where(eq(schema.tenants.id, s.tenantId));
     const plan = await planSiteFiles({
       reader,
       fw: s.framework,
@@ -191,6 +192,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
       llm,
       repoFullName: row.repoFullName,
       githubHomepage: row.homepage,
+      workspaceUrl: tenant?.siteUrl ?? null,
       deployUrl: () => gh.productionUrl(row.repoFullName)
     });
     if (!plan.fixes.length && !countActions(s.digests)) {
