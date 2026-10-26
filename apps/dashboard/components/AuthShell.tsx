@@ -13,7 +13,7 @@ import { StaticCard, type AuthVariant } from "./AuthStaticCard";
  * second on a good connection). Until then a static copy of the same card, same
  * text and same measurements, stands in its place, so the swap is invisible.
  * The copy is hidden by CSS the moment Clerk's card is in the page
- * (.ag-authshell:has(.cl-rootBox)), so the two can never show together, even
+ * (.ag-authshell:has(.cl-cardBox)), so the two can never show together, even
  * if <ClerkLoading> doesn't re-render (seen in Brave).
  */
 export function AuthShell({ variant, children }: { variant: AuthVariant; children: React.ReactNode }) {
