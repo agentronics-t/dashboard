@@ -203,9 +203,29 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
 @media (prefers-reduced-motion: reduce) { .ag-skel { animation: none; } }
 
 /* Clerk sign-in / sign-up (CLERK_APPEARANCE in app/layout.tsx) */
-/* Same footprint as the Clerk card, shown while Clerk's script loads. */
-.ag-auth-placeholder { width: min(400px, 100%); box-sizing: border-box; padding: 32px 40px; background: #fff; border: 2px solid var(--ink); border-radius: 22px; box-shadow: 8px 8px 0 var(--lime); }
-.ag-auth-placeholder .ag-skel { background-image: linear-gradient(90deg, #ececec 25%, #f6f6f6 50%, #ececec 75%); }
+/* Static copy of Clerk's sign-in / sign-up card (AuthShell), shown until
+   Clerk's own card renders. Measurements are taken from the live card, so the
+   swap doesn't move anything. */
+.ag-authcard { width: min(400px, 100%); box-sizing: border-box; border: 2px solid var(--ink); border-radius: 22px; box-shadow: 8px 8px 0 var(--lime); overflow: hidden; background: #f7f7f7; color: #0b0b0c; font: 13px/18px var(--font-funnel-sans), sans-serif; text-align: left; }
+.ag-authcard p { margin: 0; }
+.ag-authcard__main { position: relative; z-index: 1; display: flex; flex-direction: column; margin: -1px -1px 0; padding: 32px 40px; background: #fff; border-radius: 13.33px; box-shadow: 0 0 2px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); }
+.ag-authcard__title { font-weight: 700; font-size: 17px; line-height: 24px; text-align: center; }
+.ag-authcard__sub { margin-top: 4px !important; color: rgba(11,11,12,.65); text-align: center; }
+.ag-authcard__social { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 32px; }
+.ag-authcard__btn { height: 30px; display: flex; align-items: center; justify-content: center; gap: 12px; border-radius: 10px; box-shadow: 0 0 0 1px rgba(0,0,0,.07), 0 2px 3px -1px rgba(0,0,0,.08); font-weight: 500; color: rgba(0,0,0,.62); }
+.ag-authcard__or { margin-top: 24px; display: flex; align-items: center; gap: 16px; color: rgba(11,11,12,.65); }
+.ag-authcard__or::before, .ag-authcard__or::after { content: ""; flex: 1; height: 1px; background: rgba(0,0,0,.07); }
+.ag-authcard__fields { display: flex; flex-direction: column; gap: 24px; margin-top: 24px; }
+.ag-authcard__row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ag-authcard__label { display: flex; justify-content: space-between; align-items: center; font-weight: 500; }
+.ag-authcard__hint { font-size: 11px; line-height: 16px; color: rgba(11,11,12,.65); }
+.ag-authcard__input { margin-top: 8px; height: 30px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: 10px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.11), 0 0 1px rgba(0,0,0,.07); color: rgba(11,11,12,.65); white-space: nowrap; overflow: hidden; }
+.ag-authcard__primary { margin-top: 32px; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 10px; border: 2px solid var(--ink); border-radius: 10px; background: var(--lime); font-weight: 650; }
+.ag-authcard__footer { margin-top: -8px; padding-top: 8px; }
+.ag-authcard__switch { padding: 16px 32px; text-align: center; color: rgba(11,11,12,.65); }
+.ag-authcard__switch b { margin-left: 4px; color: #0b0b0c; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.ag-authcard__secured b { margin-left: 4px; color: #0b0b0c; font-weight: 700; letter-spacing: -0.02em; }
+.ag-authcard__secured { height: 49px; display: flex; align-items: center; justify-content: center; border-top: 1px solid rgba(0,0,0,.07); font-size: 12px; font-weight: 500; color: rgba(11,11,12,.65); }
 .ag-clerk-card { border: 2px solid var(--ink) !important; border-radius: 22px !important; box-shadow: 8px 8px 0 var(--lime) !important; }
 .ag-clerk-primary { border: 2px solid var(--ink) !important; color: var(--ink) !important; font-weight: 650 !important; }
 .ag-clerk-link { color: var(--ink) !important; font-weight: 600 !important; text-decoration: underline !important; text-underline-offset: 3px; }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Funnel_Display, Funnel_Sans, Martian_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { CLERK_JS_VERSION, clerkFrontendApi, clerkScriptUrl } from "@/lib/clerkAssets";
 import "./globals.css";
 
 const display = Funnel_Display({ subsets: ["latin"], variable: "--font-display", display: "swap" });
@@ -41,24 +42,6 @@ const CLERK_APPEARANCE = {
   }
 };
 
-// Exact clerk-js version, so the script URL is cacheable for a year (the
-// default "@5" URL is an uncached redirect on every visit). Keep it on the
-// major @clerk/nextjs expects (5.x for @clerk/nextjs 6) when upgrading.
-const CLERK_JS_VERSION = "5.128.0";
-
-// The Clerk Frontend API host (e.g. https://clerk.agentronics.dev), decoded
-// from the publishable key: pk_live_<base64("clerk.example.com$")>.
-const clerkFrontendApi = (() => {
-  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  if (!key) return null;
-  try {
-    const host = Buffer.from(key.split("_")[2] ?? "", "base64").toString("utf8").replace(/\$$/, "");
-    return /^[a-z0-9.-]+$/i.test(host) ? `https://${host}` : null;
-  } catch {
-    return null;
-  }
-})();
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // Restore persisted theme before paint to avoid a flash.
   const themeScript = `(function(){try{var t=localStorage.getItem('ag-theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
@@ -72,7 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Start downloading Clerk's script while the HTML parses, not after hydration.
             crossOrigin matches the tag Clerk injects, so the preload is reused. */}
         {clerkFrontendApi && (
-          <link rel="preload" as="script" crossOrigin="anonymous" href={`${clerkFrontendApi}/npm/@clerk/clerk-js@${CLERK_JS_VERSION}/dist/clerk.browser.js`} />
+          <link rel="preload" as="script" crossOrigin="anonymous" href={clerkScriptUrl!} />
         )}
       </head>
       <body>{children}</body>
