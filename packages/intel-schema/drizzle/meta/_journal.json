@@ -50,6 +50,13 @@
       "when": 1792814266061,
       "tag": "0006_pillars",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792945477272,
+      "tag": "0007_billing_interval",
+      "breakpoints": true
     }
   ]
 }

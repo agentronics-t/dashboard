@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { isPaidPlanId } from "@agentronics/intel-schema";
+import { isBillingInterval, isPaidPlanId } from "@agentronics/intel-schema";
 import { schema } from "@agentronics/intel-schema/db";
 import { dodo, planStatus } from "@/lib/billing";
 import { db, getTenantId } from "@/lib/tenant";
@@ -36,6 +36,7 @@ export async function GET(req: Request) {
       .update(schema.workspacePlans)
       .set({
         plan,
+        ...(isBillingInterval(payment.metadata?.interval) ? { billingInterval: payment.metadata.interval } : {}),
         status: sub ? planStatus(sub.status) : "active",
         dodoSubscriptionId: subscriptionId,
         dodoCustomerId: payment.customer?.customer_id ?? null,

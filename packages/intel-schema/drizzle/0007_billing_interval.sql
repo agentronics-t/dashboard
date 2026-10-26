@@ -1,0 +1,1 @@
+ALTER TABLE "workspace_plans" ADD COLUMN "billing_interval" text DEFAULT 'month' NOT NULL;
