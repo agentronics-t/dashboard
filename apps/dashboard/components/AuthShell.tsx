@@ -16,7 +16,7 @@ import { StaticCard, type AuthVariant } from "./AuthStaticCard";
  * isn't used: in Brave it kept the copy after Clerk's card showed, and in
  * Chrome it removed it a frame before the card drew.)
  */
-export function AuthShell({ variant, children }: { variant: AuthVariant; children: React.ReactNode }) {
+export function AuthShell({ variant, placeholder = true, children }: { variant: AuthVariant; placeholder?: boolean; children: React.ReactNode }) {
   // Fire Clerk's two start-up API calls from <head>, in parallel with its
   // script, instead of after the script has run. clerk-js sends them with
   // credentials, so the preloads do too and the browser reuses them.
@@ -27,7 +27,7 @@ export function AuthShell({ variant, children }: { variant: AuthVariant; childre
         <Logomark size={28} />
         <span style={{ fontFamily: "var(--font-heading)", fontWeight: 700, fontSize: 22, letterSpacing: "-0.02em" }}>agentronics</span>
       </a>
-      <StaticCard variant={variant} />
+      {placeholder && <StaticCard variant={variant} />}
       {children}
       <p style={{ margin: 0, fontSize: 14, color: "var(--content-muted)" }}>
         Want a walkthrough first?{" "}
