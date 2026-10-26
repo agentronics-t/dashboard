@@ -12,6 +12,9 @@ import { StaticCard, type AuthVariant } from "./AuthStaticCard";
  * Clerk draws its card only after its script and two API calls finish (about a
  * second on a good connection). Until then a static copy of the same card, same
  * text and same measurements, stands in its place, so the swap is invisible.
+ * The copy is hidden by CSS the moment Clerk's card is in the page
+ * (.ag-authshell:has(.cl-rootBox)), so the two can never show together, even
+ * if <ClerkLoading> doesn't re-render (seen in Brave).
  */
 export function AuthShell({ variant, children }: { variant: AuthVariant; children: React.ReactNode }) {
   // Fire Clerk's two start-up API calls from <head>, in parallel with its
@@ -19,7 +22,7 @@ export function AuthShell({ variant, children }: { variant: AuthVariant; childre
   // credentials, so the preloads do too and the browser reuses them.
   for (const href of clerkBootRequests) preload(href, { as: "fetch", crossOrigin: "use-credentials" });
   return (
-    <div className="ag-pcb" style={{ minHeight: "100vh", display: "grid", placeItems: "center", alignContent: "center", gap: 26, background: "var(--canvas)", color: "var(--content)", padding: "48px 16px" }}>
+    <div className="ag-pcb ag-authshell" style={{ minHeight: "100vh", display: "grid", placeItems: "center", alignContent: "center", gap: 26, background: "var(--canvas)", color: "var(--content)", padding: "48px 16px" }}>
       <a href="https://www.agentronics.dev" style={{ display: "flex", alignItems: "center", gap: 10 }} aria-label="agentronics.dev">
         <Logomark size={28} />
         <span style={{ fontFamily: "var(--font-heading)", fontWeight: 700, fontSize: 22, letterSpacing: "-0.02em" }}>agentronics</span>
