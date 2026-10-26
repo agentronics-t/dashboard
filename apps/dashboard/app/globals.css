@@ -205,7 +205,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
 /* Clerk sign-in / sign-up (CLERK_APPEARANCE in app/layout.tsx) */
 /* Same footprint as the Clerk card, shown while Clerk's script loads. */
 .ag-auth-placeholder { width: min(400px, 100%); box-sizing: border-box; padding: 32px 40px; background: #fff; border: 2px solid var(--ink); border-radius: 22px; box-shadow: 8px 8px 0 var(--lime); }
-.ag-auth-placeholder .ag-skel { background-color: #ececec; }
+.ag-auth-placeholder .ag-skel { background-image: linear-gradient(90deg, #ececec 25%, #f6f6f6 50%, #ececec 75%); }
 .ag-clerk-card { border: 2px solid var(--ink) !important; border-radius: 22px !important; box-shadow: 8px 8px 0 var(--lime) !important; }
 .ag-clerk-primary { border: 2px solid var(--ink) !important; color: var(--ink) !important; font-weight: 650 !important; }
 .ag-clerk-link { color: var(--ink) !important; font-weight: 600 !important; text-decoration: underline !important; text-underline-offset: 3px; }
