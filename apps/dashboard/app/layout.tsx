@@ -41,6 +41,11 @@ const CLERK_APPEARANCE = {
   }
 };
 
+// Exact clerk-js version, so the script URL is cacheable for a year (the
+// default "@5" URL is an uncached redirect on every visit). Keep it on the
+// major @clerk/nextjs expects (5.x for @clerk/nextjs 6) when upgrading.
+const CLERK_JS_VERSION = "5.128.0";
+
 // The Clerk Frontend API host (e.g. https://clerk.agentronics.dev), decoded
 // from the publishable key: pk_live_<base64("clerk.example.com$")>.
 const clerkFrontendApi = (() => {
@@ -64,6 +69,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         {/* Clerk's script and API live here; open the connection before React asks for it. */}
         {clerkFrontendApi && <link rel="preconnect" href={clerkFrontendApi} crossOrigin="" />}
+        {/* Start downloading Clerk's script while the HTML parses, not after hydration.
+            crossOrigin matches the tag Clerk injects, so the preload is reused. */}
+        {clerkFrontendApi && (
+          <link rel="preload" as="script" crossOrigin="anonymous" href={`${clerkFrontendApi}/npm/@clerk/clerk-js@${CLERK_JS_VERSION}/dist/clerk.browser.js`} />
+        )}
       </head>
       <body>{children}</body>
     </html>
@@ -74,6 +84,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return hasClerk ? (
     <ClerkProvider
       appearance={CLERK_APPEARANCE}
+      clerkJSVersion={CLERK_JS_VERSION}
       signInUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || "/sign-in"}
       signUpUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || "/sign-up"}
     >
