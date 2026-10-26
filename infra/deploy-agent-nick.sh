@@ -7,13 +7,30 @@
 # (--no-cpu-throttling); runs are a few minutes of mostly-idle I/O.
 #
 # Usage:
-#   REGION=asia-south1 ./infra/deploy-agent-nick.sh <PROJECT_ID> <CLERK_ISSUER> <CLERK_JWKS_URL> <GITHUB_APP_ID> <GITHUB_APP_SLUG> <GITHUB_APP_CLIENT_ID> <CONSOLE_URL>
+#   ./infra/deploy-agent-nick.sh <PROJECT_ID> <CLERK_ISSUER> <CLERK_JWKS_URL> <GITHUB_APP_ID> <GITHUB_APP_SLUG> <GITHUB_APP_CLIENT_ID> <CONSOLE_URL>
+#   ./infra/deploy-agent-nick.sh        # redeploy: the gcloud project, settings from the running service
+#
+# REGION defaults to us-east1.
 #
 # One-time setup (see docs/AGENT_NICK.md): create the GitHub App, then put its
 # secrets in Secret Manager — github-app-private-key, github-app-client-secret,
 # github-webhook-secret — next to the existing neon-database-url.
 
 set -euo pipefail
+
+REGION="${REGION:-us-east1}"
+
+# No arguments: redeploy with the settings the running service already has.
+if [[ $# -eq 0 ]]; then
+  PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
+  [[ -n "${PROJECT_ID}" ]] || { echo "No arguments and no gcloud project set (gcloud config set project …)." >&2; exit 1; }
+  current() {
+    gcloud run services describe agent-nick --region "${REGION}" --project "${PROJECT_ID}" \
+      --format=json | python3 -c "import json,sys; e={v['name']: v.get('value') for v in json.load(sys.stdin)['spec']['template']['spec']['containers'][0].get('env', [])}; print(e.get(sys.argv[1]) or '')" "$1"
+  }
+  set -- "${PROJECT_ID}" "$(current CLERK_ISSUER)" "$(current CLERK_JWKS_URL)" "$(current GITHUB_APP_ID)" "$(current GITHUB_APP_SLUG)" "$(current GITHUB_APP_CLIENT_ID)" "$(current CONSOLE_URL)"
+  echo "Redeploying agent-nick in ${PROJECT_ID} (${REGION}) with its current settings."
+fi
 
 PROJECT_ID="${1:?project id}"
 CLERK_ISSUER="${2:?CLERK_ISSUER}"
@@ -22,7 +39,6 @@ GITHUB_APP_ID="${4:?GitHub App id}"
 GITHUB_APP_SLUG="${5:?GitHub App slug}"
 GITHUB_APP_CLIENT_ID="${6:?GitHub App client id}"
 CONSOLE_URL="${7:?console URL, e.g. https://app.agentronics.dev}"
-REGION="${REGION:-asia-south1}"
 SERVICE="agent-nick"
 SA="agent-nick@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/intel/${SERVICE}:$(date +%Y%m%d-%H%M%S)"
