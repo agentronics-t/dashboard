@@ -206,6 +206,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
 /* Static copy of Clerk's sign-in / sign-up card (AuthShell), shown until
    Clerk's own card renders. Measurements are taken from the live card, so the
    swap doesn't move anything. */
+/* Never both: once Clerk's own card is in the page, the copy goes. */
+.ag-authshell:has(.cl-rootBox) .ag-authcard { display: none; }
 .ag-authcard { width: min(400px, 100%); box-sizing: border-box; border: 2px solid var(--ink); border-radius: 22px; box-shadow: 8px 8px 0 var(--lime); overflow: hidden; background: #f7f7f7; color: #0b0b0c; font: 13px/18px var(--font-funnel-sans), sans-serif; text-align: left; }
 .ag-authcard p { margin: 0; }
 .ag-authcard__main { position: relative; z-index: 1; display: flex; flex-direction: column; margin: -1px -1px 0; padding: 32px 40px; background: #fff; border-radius: 13.33px; box-shadow: 0 0 2px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); }
