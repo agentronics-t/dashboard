@@ -151,6 +151,22 @@ gcloud scheduler jobs "${ACTION}" http "${JOB}" \
   --attempt-deadline 180s >/dev/null
 ok "${JOB} → ${API_URL}/v1/maintenance/prune"
 
+# Webhook export (Pro+): deliver new SDK events every minute.
+log "Webhook delivery cron (every minute)"
+JOB="agentronics-webhooks"
+ACTION=create; HEADER_FLAG=--headers
+if gcloud scheduler jobs describe "${JOB}" --location "${REGION}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
+  ACTION=update; HEADER_FLAG=--update-headers
+fi
+gcloud scheduler jobs "${ACTION}" http "${JOB}" \
+  --location "${REGION}" --project "${PROJECT_ID}" \
+  --schedule "* * * * *" --time-zone "${TZ_NAME}" \
+  --uri "${API_URL}/v1/maintenance/webhooks" --http-method POST \
+  "${HEADER_FLAG}" "Content-Type=application/json" --message-body '{}' \
+  --oidc-service-account-email "${SCHED_SA}" --oidc-token-audience "${API_URL}" \
+  --attempt-deadline 120s >/dev/null
+ok "${JOB} → ${API_URL}/v1/maintenance/webhooks"
+
 # ---------------------------------------------------------------------------
 # 7. Smoke checks
 # ---------------------------------------------------------------------------
