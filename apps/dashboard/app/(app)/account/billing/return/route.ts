@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { isPaidPlanId } from "@agentronics/intel-schema";
+import { isBillingInterval, isPaidPlanId } from "@agentronics/intel-schema";
 import { schema } from "@agentronics/intel-schema/db";
 import { dodo, planStatus } from "@/lib/billing";
+import { syncSeats } from "@/lib/seats";
 import { db, getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export async function GET(req: Request) {
       .update(schema.workspacePlans)
       .set({
         plan,
+        ...(isBillingInterval(payment.metadata?.interval) ? { billingInterval: payment.metadata.interval } : {}),
         status: sub ? planStatus(sub.status) : "active",
         dodoSubscriptionId: subscriptionId,
         dodoCustomerId: payment.customer?.customer_id ?? null,
@@ -44,6 +46,7 @@ export async function GET(req: Request) {
         updatedAt: new Date()
       })
       .where(eq(schema.workspacePlans.tenantId, tenantId));
+    await syncSeats(tenantId, sub && planStatus(sub.status) !== "active" ? "free" : plan);
     return dest("active");
   } catch {
     return dest("unknown");

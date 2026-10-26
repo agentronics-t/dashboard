@@ -1,4 +1,4 @@
-// Shared shapes for the Agent Nick pipeline. Everything here is plain JSON so
+// Shared shapes for the Agent Nic pipeline. Everything here is plain JSON so
 // it can live in LangGraph checkpoints.
 
 export type FrameworkKind =
@@ -19,7 +19,7 @@ export interface Framework {
   /** Directory of the app inside the repo ("" = repo root). */
   root: string;
   typescript: boolean;
-  /** Can Agent Nick write code for it today? */
+  /** Can Agent Nic write code for it today? */
   supported: boolean;
   /** Next.js App Router dir (app or src/app). */
   appDir?: string;

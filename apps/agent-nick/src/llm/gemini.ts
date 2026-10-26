@@ -1,4 +1,4 @@
-// Gemini on Vertex AI (Model Garden) — the only model Agent Nick calls.
+// Gemini on Vertex AI (Model Garden) — the only model Agent Nic calls.
 // Every call is one structured-output request: JSON in, JSON out, no agent
 // loop. Usage is accumulated so each run shows what it cost.
 

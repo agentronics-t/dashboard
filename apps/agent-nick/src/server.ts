@@ -190,7 +190,7 @@ export function buildServer(deps: ServerDeps) {
       return { repos: lists.flat().sort((a, b) => (b.pushedAt ?? "").localeCompare(a.pushedAt ?? "")) };
     });
 
-    /** Hand a repo to Agent Nick (creates the site). */
+    /** Hand a repo to Agent Nic (creates the site). */
     api.post("/v1/sites", async (req, reply) => {
       if (!requireAdmin(req, reply)) return;
       const body = z.object({ installationId: z.coerce.number().int().positive(), repoId: z.coerce.number().int().positive() }).parse(req.body);
@@ -244,7 +244,7 @@ export function buildServer(deps: ServerDeps) {
       if (maxRuns !== null && (await runsThisMonth(db, req.tenantId)) >= maxRuns) {
         return reply
           .status(402)
-          .send(limitError(`You've used ${maxRuns === 1 ? "the 1 Agent Nick run" : `all ${maxRuns} Agent Nick runs`} in your ${plan.name} plan this month.`, (p) => (p.limits.agentNickRunsPerMonth ?? Infinity) > maxRuns));
+          .send(limitError(`You've used ${maxRuns === 1 ? "the 1 Agent Nic run" : `all ${maxRuns} Agent Nic runs`} in your ${plan.name} plan this month.`, (p) => (p.limits.agentNickRunsPerMonth ?? Infinity) > maxRuns));
       }
       const [run] = await db
         .insert(schema.agentNickRuns)

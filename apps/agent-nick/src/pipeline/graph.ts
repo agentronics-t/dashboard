@@ -1,4 +1,4 @@
-// The Agent Nick pipeline as a LangGraph graph:
+// The Agent Nic pipeline as a LangGraph graph:
 //
 //   read_code → detect_framework → find_pages → find_actions → site_files
 //     → propose_tools → review ⏸ → write_code → validate_code → open_pr
@@ -147,7 +147,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     await db.update(schema.agentNickSites).set({ framework: fw.label, updatedAt: new Date() }).where(eq(schema.agentNickSites.id, s.siteId));
     if (!fw.supported) {
       throw new Halt(
-        `${fw.label} isn't supported yet. Agent Nick writes code for Next.js (App and Pages Router), React single-page apps and static HTML today.`
+        `${fw.label} isn't supported yet. Agent Nic writes code for Next.js (App and Pages Router), React single-page apps and static HTML today.`
       );
     }
     await r.done("framework", `${fw.label}${fw.root ? ` in /${fw.root}` : ""}${fw.typescript ? " · TypeScript" : ""}`, fw);
@@ -303,7 +303,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
 
   const pr = step("pr", "Opening a pull request", async (s, r) => {
     const { gh, site: row } = await repo(s);
-    const branch = `agentronics/agent-nick-${s.runId.slice(0, 8)}`;
+    const branch = `agentronics/agent-nic-${s.runId.slice(0, 8)}`;
     const siteFixes = (s.site?.fixes ?? []).filter((f) => (s.siteKinds ?? []).includes(f.kind));
     const title = prTitle(s.approved.length, siteFixes);
     const body = prBody({
@@ -314,7 +314,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
       changes: s.changes,
       manualSteps: s.manualSteps,
       skipped: s.skipped,
-      runUrl: deps.consoleUrl ? `${deps.consoleUrl}/agent-nick/runs/${s.runId}` : null
+      runUrl: deps.consoleUrl ? `${deps.consoleUrl}/agent-nic/runs/${s.runId}` : null
     });
 
     for (const t of s.approved) {

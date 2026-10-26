@@ -16,8 +16,8 @@ const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const back = (q: string) => {
-    const res = NextResponse.redirect(`${url.origin}/agent-nick?${q}`);
-    res.cookies.delete({ name: "an_gh_state", path: "/agent-nick/github" });
+    const res = NextResponse.redirect(`${url.origin}/agent-nic?${q}`);
+    res.cookies.delete({ name: "an_gh_state", path: "/agent-nic/github" });
     return res;
   };
   const code = url.searchParams.get("code");

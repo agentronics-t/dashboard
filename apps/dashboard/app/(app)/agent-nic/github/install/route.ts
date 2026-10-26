@@ -8,14 +8,14 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const slug = githubAppSlug();
   const origin = new URL(req.url).origin;
-  if (!slug) return NextResponse.redirect(`${origin}/agent-nick?error=github_not_configured`);
+  if (!slug) return NextResponse.redirect(`${origin}/agent-nic?error=github_not_configured`);
   const state = randomBytes(24).toString("base64url");
   const res = NextResponse.redirect(`https://github.com/apps/${slug}/installations/new?state=${state}`);
   res.cookies.set("an_gh_state", state, {
     httpOnly: true,
     secure: origin.startsWith("https://"),
     sameSite: "lax",
-    path: "/agent-nick/github",
+    path: "/agent-nic/github",
     maxAge: 15 * 60
   });
   return res;

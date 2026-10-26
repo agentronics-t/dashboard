@@ -4,24 +4,32 @@
 import "server-only";
 import DodoPayments from "dodopayments";
 import { and, count, eq, gte, sql } from "drizzle-orm";
-import { PLANS, monthStart, resolvePlan, type PaidPlanId, type PlanSpec } from "@agentronics/intel-schema";
+import { PLANS, monthStart, resolvePlan, type BillingInterval, type PaidPlanId, type PlanSpec } from "@agentronics/intel-schema";
 import { schema } from "@agentronics/intel-schema/db";
 import { db } from "./tenant";
 
 export const PAID_PLANS: PlanSpec[] = [PLANS.starter, PLANS.pro];
 
-/** Monthly subscription products created in the Dodo dashboard ($19 / $49). */
-export function planProductId(plan: PaidPlanId): string | null {
-  const ids: Record<PaidPlanId, string | undefined> = {
-    starter: process.env.DODO_PRODUCT_STARTER,
-    pro: process.env.DODO_PRODUCT_PRO
+/**
+ * Subscription products in Dodo: monthly ($19 / $49) and yearly ($180 / $465,
+ * 21% off). Test and live mode have different IDs, so they come from env.
+ */
+export function planProductId(plan: PaidPlanId, interval: BillingInterval = "month"): string | null {
+  const ids: Record<BillingInterval, Record<PaidPlanId, string | undefined>> = {
+    month: { starter: process.env.DODO_PRODUCT_STARTER, pro: process.env.DODO_PRODUCT_PRO },
+    year: { starter: process.env.DODO_PRODUCT_STARTER_YEARLY, pro: process.env.DODO_PRODUCT_PRO_YEARLY }
   };
-  return ids[plan] || null;
+  return ids[interval][plan] || null;
 }
 
-export function planFromProduct(productId: string): PaidPlanId | null {
-  return (["starter", "pro"] as const).find((p) => planProductId(p) === productId) ?? null;
+/** Which plan and billing interval a Dodo product is. */
+export function planFromProduct(productId: string): { plan: PaidPlanId; interval: BillingInterval } | null {
+  for (const interval of ["month", "year"] as const)
+    for (const plan of ["starter", "pro"] as const) if (planProductId(plan, interval) === productId) return { plan, interval };
+  return null;
 }
+
+export const yearlyAvailable = () => !!planProductId("starter", "year") && !!planProductId("pro", "year");
 
 /** test_mode unless explicitly live — a missing or misspelled variable can never charge real cards. */
 const environment = (): "live_mode" | "test_mode" => (process.env.DODO_PAYMENTS_ENVIRONMENT === "live_mode" ? "live_mode" : "test_mode");

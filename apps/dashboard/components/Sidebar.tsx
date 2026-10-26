@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logomark } from "./Logomark";
 
-// Agent Nick sits above the SDK pillars: it's where a site gets its WebMCP tools.
-const AGENT_NAV = [{ href: "/agent-nick", label: "Agent Nick", icon: "bot" }];
+// Agent Nic sits above the SDK pillars: it's where a site gets its WebMCP tools.
+const AGENT_NAV = [{ href: "/agent-nic", label: "Agent Nic", icon: "bot" }];
 
 // Agentronics is one product now — the SDK and the dashboard it feeds.
 // Fed by events streamed to the intel-api SDK ingest endpoint; each page
@@ -22,6 +22,7 @@ const SDK_NAV = [
 ];
 
 const BOTTOM = [
+  { href: "/team", label: "Team", icon: "team" },
   { href: "/settings", label: "Settings", icon: "gear" },
   { href: "/account", label: "Account", icon: "user" }
 ];
@@ -41,6 +42,7 @@ const ICONS: Record<string, React.ReactElement> = {
   chart: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   gear: <path d="M12 9a3 3 0 100 6 3 3 0 000-6zM4 12h2M18 12h2M12 4v2M12 18v2" />,
   user: <path d="M12 12a4 4 0 100-8 4 4 0 000 8zM5 21a7 7 0 0114 0" />,
+  team: <path d="M9 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM3 20a6 6 0 0112 0M16 4.5a3.5 3.5 0 010 6.5M18 14.5a6 6 0 013 5.5" />,
   chevron: <path d="M15 6l-6 6 6 6" />,
   sun: <path d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M19 19l-1.5-1.5M5 19l1.5-1.5M19 5l-1.5 1.5" />,
   moon: <path d="M20 14A8 8 0 119 3a6 6 0 0011 11z" />

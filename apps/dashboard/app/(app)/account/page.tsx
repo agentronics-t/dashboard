@@ -1,7 +1,7 @@
 import { AccountActions } from "@/components/AccountActions";
 import { ManageBillingButton, PlanChooser } from "@/components/PlanChooser";
 import { Card, CardTitle, PageHeader, fmt } from "@/components/ui";
-import { billingConfigured, getPlanUsage, getWorkspacePlan } from "@/lib/billing";
+import { billingConfigured, getPlanUsage, getWorkspacePlan, yearlyAvailable } from "@/lib/billing";
 import { planCards } from "@/lib/planCards";
 import { getTenantId } from "@/lib/tenant";
 
@@ -9,14 +9,15 @@ export const dynamic = "force-dynamic";
 
 async function getProfile() {
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
-    return { name: "Demo workspace", email: "demo@agentronics.dev", clerk: false };
+    return { name: "Demo user", email: "demo@agentronics.dev", workspace: "Demo workspace" };
   }
-  const { currentUser } = await import("@clerk/nextjs/server");
-  const user = await currentUser();
+  const { auth, currentUser } = await import("@clerk/nextjs/server");
+  const [user, { orgId, orgSlug }] = await Promise.all([currentUser(), auth()]);
   return {
     name: user?.fullName || user?.username || "—",
     email: user?.primaryEmailAddress?.emailAddress || "—",
-    clerk: true
+    // An organization's workspace is shared with its members; otherwise it's yours alone.
+    workspace: orgSlug ? `Team (${orgSlug})` : orgId ? "Team" : "Personal"
   };
 }
 
@@ -51,7 +52,13 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", marginTop: 4 }}>
               {spec.name}
               <span className="ag-muted" style={{ fontSize: 14, fontWeight: 600, marginLeft: 8 }}>
-                {spec.priceUsd === null ? "custom" : spec.priceUsd === 0 ? "free" : `$${spec.priceUsd}/mo`}
+                {spec.priceUsd === null
+                  ? "custom"
+                  : spec.priceUsd === 0
+                    ? "free"
+                    : row?.billingInterval === "year"
+                      ? `$${spec.priceUsdYearly}/yr`
+                      : `$${spec.priceUsd}/mo`}
               </span>
             </div>
             {renews && <div className="ag-muted" style={{ fontSize: 12.5, marginTop: 2 }}>Renews {renews}</div>}
@@ -63,23 +70,29 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
           <Meter label="Agent requests recorded" used={usage.requests} limit={l.requestsPerMonth} sub="this month · agents are never blocked" />
-          <Meter label="Agent Nick runs" used={usage.runs} limit={l.agentNickRunsPerMonth} sub="this month" />
-          <Meter label="Agent Nick sites" used={usage.sites} limit={l.agentNickSites} sub="connected repositories" />
+          <Meter label="Agent Nic runs" used={usage.runs} limit={l.agentNickRunsPerMonth} sub="this month" />
+          <Meter label="Agent Nic sites" used={usage.sites} limit={l.agentNickSites} sub="connected repositories" />
           <Meter label="History kept" text={l.retentionDays === null ? "Custom" : `${l.retentionDays} days`} sub="raw events" />
         </div>
       </Card>
 
       <Card style={{ marginBottom: 18 }}>
         <CardTitle>Plans</CardTitle>
-        <PlanChooser plans={planCards()} current={spec.id} next="/account" billingReady={billingConfigured()} />
+        <PlanChooser
+          plans={planCards()}
+          current={spec.id}
+          currentInterval={row?.billingInterval === "year" ? "year" : "month"}
+          next="/account"
+          billingReady={billingConfigured()}
+          yearlyReady={yearlyAvailable()}
+        />
       </Card>
 
       <Card style={{ marginBottom: 18 }}>
         <CardTitle>Profile</CardTitle>
         <Row label="Name" value={profile.name} />
         <Row label="Email" value={profile.email} />
-        <Row label="Tenant" value={tenantId} mono />
-        <Row label="Auth" value={profile.clerk ? "Clerk" : "Demo (Clerk not configured)"} />
+        <Row label="Workspace" value={profile.workspace} />
       </Card>
 
       <Card>

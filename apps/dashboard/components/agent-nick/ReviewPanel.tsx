@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { cancelRun, submitReview, type SiteFixKind } from "@/app/(app)/agent-nick/actions";
+import { cancelRun, submitReview, type SiteFixKind } from "@/app/(app)/agent-nic/actions";
 import { PlanChooser, type PlanCard } from "@/components/PlanChooser";
 import { Badge } from "@/components/ui";
 
@@ -21,7 +21,7 @@ export interface ReviewTool {
   inputSchema: unknown;
 }
 
-/** A discoverability fix Agent Nick drafted in the "Site files" step. */
+/** A discoverability fix Agent Nic drafted in the "Site files" step. */
 export interface ReviewSiteFix {
   kind: SiteFixKind;
   title: string;
@@ -63,7 +63,7 @@ export function ReviewPanel({
   runId: string;
   tools: ReviewTool[];
   siteFixes?: ReviewSiteFix[];
-  /** The address Agent Nick found (GitHub homepage, package.json, metadataBase…), if any. */
+  /** The address Agent Nic found (GitHub homepage, package.json, metadataBase…), if any. */
   detectedUrl?: string | null;
   plan: ReviewPlan;
   plans: PlanCard[];
@@ -290,7 +290,7 @@ export function ReviewPanel({
           <p className="ag-muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
             {lockedCount ? `${lockedCount} tool${lockedCount === 1 ? " needs" : "s need"} a higher plan. ` : ""}Upgrade and come back to this review — nothing is lost.
           </p>
-          <PlanChooser plans={plans} current={plan.id} next={`/agent-nick/runs/${runId}`} billingReady={billingReady} compact />
+          <PlanChooser plans={plans} current={plan.id} next={`/agent-nic/runs/${runId}`} billingReady={billingReady} compact />
         </section>
       )}
     </div>

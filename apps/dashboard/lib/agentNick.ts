@@ -1,4 +1,4 @@
-// Agent Nick — console side. Reads come straight from Neon (tenant-scoped);
+// Agent Nic — console side. Reads come straight from Neon (tenant-scoped);
 // anything that touches GitHub or the pipeline goes through the agent-nick
 // service, authenticated with the signed-in user's Clerk session token.
 import "server-only";
@@ -24,7 +24,7 @@ export class NickError extends Error {
 /** Call the agent-nick service as the signed-in user. */
 export async function nickFetch<T>(path: string, init: { method?: string; body?: unknown; tenantId?: string } = {}): Promise<T> {
   const base = process.env.AGENT_NICK_URL;
-  if (!base) throw new NickError(503, "not_configured", "Agent Nick isn't connected to this console yet.");
+  if (!base) throw new NickError(503, "not_configured", "Agent Nic isn't connected to this console yet.");
   let token: string | null = null;
   if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
     const { auth } = await import("@clerk/nextjs/server");
@@ -48,7 +48,7 @@ const FRIENDLY: Record<string, string> = {
   admin_required: "Only organization admins can do this.",
   not_awaiting_review: "This run isn't waiting for a review anymore.",
   no_open_pr: "There's no open pull request for this run.",
-  github_disconnected: "Agent Nick lost access to this repository — reconnect GitHub.",
+  github_disconnected: "Agent Nic lost access to this repository — reconnect GitHub.",
   installation_not_yours: "That GitHub installation doesn't belong to your GitHub account.",
   invalid_token: "Your session expired — refresh the page."
 };

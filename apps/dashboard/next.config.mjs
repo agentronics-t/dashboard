@@ -30,7 +30,13 @@ const nextConfig = {
       { source: "/billing", destination: "/settings" },
       { source: "/help", destination: "/overview" }
     ].map((r) => ({ ...r, permanent: false }));
-    return [...retired, ...authOnly];
+    // Agent Nick was renamed Agent Nic. Old links and the GitHub App's registered
+    // callback (/agent-nick/github/callback) keep working; the query string passes through.
+    const renamed = [
+      { source: "/agent-nick", destination: "/agent-nic", permanent: true },
+      { source: "/agent-nick/:path*", destination: "/agent-nic/:path*", permanent: true }
+    ];
+    return [...retired, ...authOnly, ...renamed];
   }
 
 };

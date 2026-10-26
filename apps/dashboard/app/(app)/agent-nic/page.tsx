@@ -17,7 +17,7 @@ const ERRORS: Record<string, string> = {
   github_not_configured: "The GitHub App isn't configured on this console yet.",
   github_link_failed: "We couldn't link the GitHub installation. Try again.",
   plan_limit: "That's over your plan's limit. Upgrade in Account to continue.",
-  not_configured: "The Agent Nick service isn't connected to this console yet."
+  not_configured: "The Agent Nic service isn't connected to this console yet."
 };
 
 export default async function AgentNickPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -44,7 +44,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader
-        title="Agent Nick"
+        title="Agent Nic"
         subtitle="Our agents write WebMCP tools, a sitemap, llms.txt and structured data into your own code and open a pull request. You review, you merge."
         action={active ? <LiveRefresh intervalMs={4000} /> : undefined}
       />
@@ -80,7 +80,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
         <Card style={{ padding: 24 }}>
           <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Make your site agent-ready without writing the code</div>
           <p className="ag-muted" style={{ margin: "6px 0 0", maxWidth: 640 }}>
-            Connect GitHub and pick your website&apos;s repository. Agent Nick reads the code, proposes WebMCP tools for your pages, and — once
+            Connect GitHub and pick your website&apos;s repository. Agent Nic reads the code, proposes WebMCP tools for your pages, and — once
             you approve — opens a pull request with the changes.
           </p>
           <div className="ag-hero-steps">
@@ -97,7 +97,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
             ))}
           </div>
           {configured ? (
-            <a className="ag-btn ag-btn-primary" href="/agent-nick/github/install">
+            <a className="ag-btn ag-btn-primary" href="/agent-nic/github/install">
               Connect GitHub
             </a>
           ) : (
@@ -110,7 +110,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
             <Kpi label="Sites live" value={fmt(live.length)} sub={`of ${sites.length} connected`} />
             <Kpi label="Tools live" value={fmt(liveTools)} sub="WebMCP tools merged" />
             <Kpi label="Open PRs" value={fmt(openPrs)} sub="waiting for you" />
-            <Kpi label="Last change" value={lastChange ? timeAgo(lastChange) : "—"} sub="last merge by Agent Nick" />
+            <Kpi label="Last change" value={lastChange ? timeAgo(lastChange) : "—"} sub="last merge by Agent Nic" />
           </div>
 
           {sites.length > 0 && (
@@ -124,7 +124,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
                       <th>Status</th>
                       <th>Tools live</th>
                       <th>Last push</th>
-                      <th>Last Agent Nick change</th>
+                      <th>Last Agent Nic change</th>
                       <th aria-label="Actions" />
                     </tr>
                   </thead>
@@ -136,7 +136,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
                       return (
                         <tr key={site.id}>
                           <td>
-                            <Link href={`/agent-nick/sites/${site.id}`} className="ag-mono" style={{ fontWeight: 600 }}>
+                            <Link href={`/agent-nic/sites/${site.id}`} className="ag-mono" style={{ fontWeight: 600 }}>
                               {site.repoFullName}
                             </Link>
                             {site.framework && <div className="ag-muted" style={{ fontSize: 12 }}>{site.framework}</div>}
@@ -178,7 +178,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
                           </td>
                           <td style={{ textAlign: "right" }}>
                             {lastRun && (
-                              <Link className="ag-btn ag-btn-sm" href={`/agent-nick/runs/${lastRun.id}`}>
+                              <Link className="ag-btn ag-btn-sm" href={`/agent-nic/runs/${lastRun.id}`}>
                                 {["queued", "running"].includes(lastRun.status) ? "Watch" : lastRun.status === "awaiting_review" ? "Review" : "Open run"}
                               </Link>
                             )}

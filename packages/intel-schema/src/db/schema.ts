@@ -304,7 +304,9 @@ export const sdkEvents = pgTable(
   (t) => [
     index("sdk_events_tenant_occurred_idx").on(t.tenantId, t.occurredAt),
     index("sdk_events_tenant_type_idx").on(t.tenantId, t.type, t.occurredAt),
-    index("sdk_events_tenant_site_idx").on(t.tenantId, t.siteId)
+    index("sdk_events_tenant_site_idx").on(t.tenantId, t.siteId),
+    // Webhook export walks events in this order (see sdk_webhooks).
+    index("sdk_events_tenant_ingested_idx").on(t.tenantId, t.ingestedAt, t.id)
   ]
 );
 
@@ -558,8 +560,8 @@ export const agentKeys = pgTable(
   ]
 );
 
-// ---- Agent Nick (GitHub → WebMCP pipeline) -----------------------------------
-// The console's Agent Nick reads a customer's repo through our GitHub App,
+// ---- Agent Nic (GitHub → WebMCP pipeline) -----------------------------------
+// The console's Agent Nic reads a customer's repo through our GitHub App,
 // proposes WebMCP tools, and opens a PR. The agent-nick service writes these
 // rows; the dashboard only reads them (plus the tenant's own review decision).
 
@@ -586,7 +588,7 @@ export const githubInstallations = pgTable(
   ]
 );
 
-/** A repo the tenant handed to Agent Nick — the "site" on the Agent overview. */
+/** A repo the tenant handed to Agent Nic — the "site" on the Agent overview. */
 export const agentNickSites = pgTable(
   "agent_nick_sites",
   {
@@ -727,5 +729,25 @@ export const workspacePlans = pgTable("workspace_plans", {
   dodoCustomerId: text("dodo_customer_id"),
   checkoutSessionId: text("checkout_session_id"), // pending checkout, confirmed on return/webhook
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  billingInterval: text("billing_interval").notNull().default("month"), // month | year
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+// Webhook export (Pro+): one HTTPS endpoint per workspace. intel-api delivers
+// SDK events to it in batches (Standard Webhooks signatures), walking
+// sdk_events in (ingested_at, id) order from the cursor below, so no outbox.
+export const sdkWebhooks = pgTable("sdk_webhooks", {
+  tenantId: uuid("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  secret: text("secret").notNull(), // whsec_<base64>, signs every delivery
+  enabled: boolean("enabled").notNull().default(true),
+  cursorAt: timestamp("cursor_at", { withTimezone: true }).notNull().defaultNow(),
+  cursorId: text("cursor_id").notNull().default(""),
+  failures: integer("failures").notNull().default(0), // consecutive
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lastStatus: text("last_status"), // "200" | "timeout" | "blocked address" | …
+  lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });

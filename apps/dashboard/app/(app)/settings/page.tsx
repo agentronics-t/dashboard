@@ -1,20 +1,51 @@
-import { Card, CardTitle, PageHeader } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { SdkKeys } from "@/components/SdkKeys";
 import { PublishableKeys } from "@/components/PublishableKeys";
+import { WebhookExport } from "@/components/WebhookExport";
+import { eq } from "drizzle-orm";
+import { upgradeFor } from "@agentronics/intel-schema";
+import { schema } from "@agentronics/intel-schema/db";
+import { getWorkspacePlan } from "@/lib/billing";
 import { getPublishableKeys, getSdkIngestKeys } from "@/lib/queries";
-import { getTenantId } from "@/lib/tenant";
-import { mintIngestKey, mintPublishableKey, revokeIngestKey, revokePublishableKey, updatePublishableKeyOrigins } from "./actions";
+import { db, getTenantId } from "@/lib/tenant";
+import {
+  deleteWebhook,
+  mintIngestKey,
+  mintPublishableKey,
+  revealWebhookSecret,
+  revokeIngestKey,
+  revokePublishableKey,
+  rotateWebhookSecret,
+  saveWebhook,
+  sendTestWebhook,
+  updatePublishableKeyOrigins
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const tenantId = await getTenantId();
-  const [keys, pubKeys] = await Promise.all([getSdkIngestKeys(tenantId), getPublishableKeys(tenantId)]);
+  const [keys, pubKeys, { spec: plan }, [hook]] = await Promise.all([
+    getSdkIngestKeys(tenantId),
+    getPublishableKeys(tenantId),
+    getWorkspacePlan(tenantId),
+    db()
+      .select({
+        url: schema.sdkWebhooks.url,
+        enabled: schema.sdkWebhooks.enabled,
+        failures: schema.sdkWebhooks.failures,
+        lastStatus: schema.sdkWebhooks.lastStatus,
+        lastDeliveryAt: schema.sdkWebhooks.lastDeliveryAt
+      })
+      .from(schema.sdkWebhooks)
+      .where(eq(schema.sdkWebhooks.tenantId, tenantId))
+  ]);
+  const webhooksFrom = upgradeFor((p) => p.features.webhookExport);
   const apiUrl = (process.env.AGENTRONICS_API_PUBLIC_URL || "https://api.agentronics.dev").replace(/\/$/, "");
 
   return (
     <>
-      <PageHeader title="Settings" subtitle="Workspace preferences" />
+      <PageHeader title="Settings" subtitle="Keys for the SDK and the Agentronics API, and webhooks" />
 
       <div style={{ marginBottom: 18 }}>
         <PublishableKeys
@@ -30,22 +61,19 @@ export default async function SettingsPage() {
         <SdkKeys keys={keys} mint={mintIngestKey} revoke={revokeIngestKey} />
       </div>
 
-      <Card style={{ marginBottom: 18 }}>
-        <CardTitle>Data sources</CardTitle>
-        <p style={{ margin: 0, color: "var(--content-secondary)", fontSize: 14, lineHeight: 1.55 }}>
-          Connect and configure your data sources from the <strong>Plugins</strong> page.
-          Credentials are stored in Google Secret Manager and never touch the database.
-        </p>
-      </Card>
+      <div style={{ marginBottom: 18 }}>
+        <WebhookExport
+          included={plan.features.webhookExport}
+          lockedNote={`Webhooks aren't included in the ${plan.name} plan.${webhooksFrom ? ` They come with ${webhooksFrom.name}.` : ""}`}
+          hook={hook ?? null}
+          save={saveWebhook}
+          remove={deleteWebhook}
+          reveal={revealWebhookSecret}
+          rotate={rotateWebhookSecret}
+          test={sendTestWebhook}
+        />
+      </div>
 
-      <Card>
-        <CardTitle>Import schedule</CardTitle>
-        <p style={{ margin: 0, color: "var(--content-secondary)", fontSize: 14, lineHeight: 1.55 }}>
-          Imports run automatically every day at <strong>02:00 IST</strong> per connected plugin,
-          and you can trigger one any time from <strong>Plugins → Run import now</strong>. A watchdog
-          fails jobs stuck longer than 2 hours and surfaces them in your insights feed.
-        </p>
-      </Card>
     </>
   );
 }

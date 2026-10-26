@@ -1,3 +1,6 @@
+import { cache } from "react";
+import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
 import { createDb, schema } from "@agentronics/intel-schema/db";
 
 /** Fixed demo tenant from the seed (used when Clerk is not configured). */
@@ -11,29 +14,39 @@ export function db() {
 
 /**
  * Resolve the active tenant. With Clerk configured, maps the user's org (or a
- * per-user tenant) to tenants.clerk_org_id, bootstrapping the row on first
- * sight — mirroring intel-api's tenant resolution. Without Clerk, the demo
- * tenant is used so the dashboard works in dev.
+ * per-user tenant) to tenants.clerk_org_id, creating the row the first time,
+ * mirroring intel-api's tenant resolution. Without Clerk, the demo tenant is
+ * used so the dashboard works in dev.
+ *
+ * Every page and action calls this, so it reads first (one indexed SELECT) and
+ * only writes for a brand-new workspace, and React's cache() runs it once per
+ * request however many components ask.
  */
-export async function getTenantId(): Promise<string> {
+export const getTenantId = cache(async (): Promise<string> => {
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) return DEMO_TENANT_ID;
 
   const { auth } = await import("@clerk/nextjs/server");
   const { userId, orgId } = await auth();
-  if (!userId) return DEMO_TENANT_ID;
+  // The middleware protects every page; never fall back to shared data.
+  if (!userId) redirect("/sign-in");
   const orgKey = orgId ?? `user:${userId}`;
 
-  const [tenant] = await db()
+  const [existing] = await db()
+    .select({ id: schema.tenants.id })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.clerkOrgId, orgKey))
+    .limit(1);
+  if (existing) return existing.id;
+
+  const [created] = await db()
     .insert(schema.tenants)
     .values({ name: orgKey, clerkOrgId: orgKey })
-    .onConflictDoUpdate({
-      target: schema.tenants.clerkOrgId,
-      set: { clerkOrgId: orgKey }
-    })
+    .onConflictDoUpdate({ target: schema.tenants.clerkOrgId, set: { clerkOrgId: orgKey } })
     .returning({ id: schema.tenants.id });
-
-  return (tenant as { id: string } | undefined)?.id ?? DEMO_TENANT_ID;
-}
+  // A new team workspace starts on Free: one seat until it upgrades.
+  if (orgId) await (await import("./seats")).syncSeats(created.id, "free");
+  return created.id;
+});
 
 /**
  * Server-action guard for workspace-changing operations (keys, billing):

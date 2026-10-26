@@ -1,6 +1,7 @@
 import { eq, or } from "drizzle-orm";
 import { schema } from "@agentronics/intel-schema/db";
-import { isPaidPlanId } from "@agentronics/intel-schema";
+import { isBillingInterval, isPaidPlanId, resolvePlan } from "@agentronics/intel-schema";
+import { syncSeats } from "@/lib/seats";
 import { dodo, planFromProduct, planStatus } from "@/lib/billing";
 import { db } from "@/lib/tenant";
 
@@ -40,14 +41,17 @@ export async function POST(req: Request) {
     customer?: { customer_id?: string };
   };
   const tenantId = sub.metadata?.tenant_id;
-  const plan = planFromProduct(sub.product_id) ?? (isPaidPlanId(sub.metadata?.plan) ? sub.metadata.plan : null);
+  const product = planFromProduct(sub.product_id);
+  const plan = product?.plan ?? (isPaidPlanId(sub.metadata?.plan) ? sub.metadata.plan : null);
+  const interval = product?.interval ?? (isBillingInterval(sub.metadata?.interval) ? sub.metadata.interval : null);
   const values = {
     status: planStatus(sub.status),
     dodoSubscriptionId: sub.subscription_id,
     dodoCustomerId: sub.customer?.customer_id ?? null,
     currentPeriodEnd: sub.next_billing_date ? new Date(sub.next_billing_date) : null,
     updatedAt: new Date(),
-    ...(plan ? { plan } : {})
+    ...(plan ? { plan } : {}),
+    ...(interval ? { billingInterval: interval } : {})
   };
 
   const updated = await db()
@@ -61,6 +65,11 @@ export async function POST(req: Request) {
     .returning({ tenantId: schema.workspacePlans.tenantId });
   if (!updated.length && tenantId && plan) {
     await db().insert(schema.workspacePlans).values({ tenantId, plan, ...values }).onConflictDoNothing();
+  }
+  // Team seats follow the effective plan (a cancelled or on-hold plan is Free).
+  for (const t of new Set([...updated.map((u) => u.tenantId), ...(tenantId ? [tenantId] : [])])) {
+    const [row] = await db().select().from(schema.workspacePlans).where(eq(schema.workspacePlans.tenantId, t));
+    await syncSeats(t, resolvePlan(row));
   }
   return Response.json({ ok: true });
 }

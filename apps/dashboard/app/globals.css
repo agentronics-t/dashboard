@@ -125,7 +125,7 @@ button { font-family: inherit; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
 .dark input[type="checkbox"], .dark input[type="radio"] { accent-color: var(--lime); }
 
-/* ---- Agent Nick ---------------------------------------------------------- */
+/* ---- Agent Nic ---------------------------------------------------------- */
 .ag-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 9px 15px; border-radius: var(--radius-md); border: 2px solid var(--border-strong);
@@ -196,3 +196,20 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
   .ag-log li { grid-template-columns: 56px 1fr; }
   .ag-log li > :nth-child(2) { display: none; }
 }
+
+/* Loading skeleton (app/(app)/loading.tsx) */
+.ag-skel { background: linear-gradient(90deg, var(--surface-raised) 25%, color-mix(in srgb, var(--surface-raised) 50%, var(--surface)) 50%, var(--surface-raised) 75%); background-size: 200% 100%; border-radius: var(--radius-md); animation: ag-skel 1.2s ease-in-out infinite; }
+@keyframes ag-skel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .ag-skel { animation: none; } }
+
+/* Clerk sign-in / sign-up (CLERK_APPEARANCE in app/layout.tsx) */
+.ag-clerk-card { border: 2px solid var(--ink) !important; border-radius: 22px !important; box-shadow: 8px 8px 0 var(--lime) !important; }
+.ag-clerk-primary { border: 2px solid var(--ink) !important; color: var(--ink) !important; font-weight: 650 !important; }
+.ag-clerk-link { color: var(--ink) !important; font-weight: 600 !important; text-decoration: underline !important; text-underline-offset: 3px; }
+
+/* Monthly / Yearly switch above the plan cards (PlanChooser) */
+.ag-interval { display: inline-flex; margin-bottom: 14px; border: 2px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden; }
+.ag-interval-opt { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 0; background: var(--surface); color: var(--content); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.ag-interval-opt + .ag-interval-opt { border-left: 2px solid var(--border-strong); }
+.ag-interval-opt[aria-checked="true"] { background: var(--lime); color: var(--ink); }
+.ag-interval-save { font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 6px; border-radius: 999px; background: var(--ink); color: var(--lime); }
