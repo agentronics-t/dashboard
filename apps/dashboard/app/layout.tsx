@@ -41,6 +41,19 @@ const CLERK_APPEARANCE = {
   }
 };
 
+// The Clerk Frontend API host (e.g. https://clerk.agentronics.dev), decoded
+// from the publishable key: pk_live_<base64("clerk.example.com$")>.
+const clerkFrontendApi = (() => {
+  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  if (!key) return null;
+  try {
+    const host = Buffer.from(key.split("_")[2] ?? "", "base64").toString("utf8").replace(/\$$/, "");
+    return /^[a-z0-9.-]+$/i.test(host) ? `https://${host}` : null;
+  } catch {
+    return null;
+  }
+})();
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // Restore persisted theme before paint to avoid a flash.
   const themeScript = `(function(){try{var t=localStorage.getItem('ag-theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
@@ -49,6 +62,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${display.variable} ${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {/* Clerk's script and API live here; open the connection before React asks for it. */}
+        {clerkFrontendApi && <link rel="preconnect" href={clerkFrontendApi} crossOrigin="" />}
       </head>
       <body>{children}</body>
     </html>
