@@ -6,12 +6,9 @@ import { AuthShell } from "@/components/AuthShell";
 // every visit. Signed-in visitors never reach it: the middleware redirects them.
 export const dynamic = "force-static";
 
-// The stand-in card only belongs on the form itself; Clerk's sub-steps (e.g.
-// /sign-in/sso-callback after GitHub or Google) draw something else.
-export default async function SignInPage({ params }: { params: Promise<{ "sign-in"?: string[] }> }) {
-  const step = (await params)["sign-in"];
+export default function SignInPage() {
   return (
-    <AuthShell variant="sign-in" placeholder={!step?.length}>
+    <AuthShell variant="sign-in">
       <SignIn signUpUrl="/sign-up" fallbackRedirectUrl="/detect" />
     </AuthShell>
   );
