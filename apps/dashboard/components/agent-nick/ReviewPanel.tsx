@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { cancelRun, submitReview, type SiteFixKind } from "@/app/(app)/agent-nic/actions";
 import { PlanChooser, type PlanCard } from "@/components/PlanChooser";
 import { Badge } from "@/components/ui";
@@ -49,7 +49,14 @@ const RISK: Record<string, { label: string; kind: string }> = {
 };
 const AUTH_LABEL: Record<Auth, string> = { public: "Any agent", signed_in: "Signed-in visitors", scoped: "Scoped grant only" };
 
+/** Site fixes that are written with the site's address in them. */
+const NEEDS_URL = new Set<string>(["sitemap", "structured-data", "sdk"]);
+
 type Choice = Record<string, { approved: boolean; auth: Auth }>;
+
+/** Agent Nic's suggestion, or a safe default from the tool's risk when it has none. */
+const defaultAuth = (t: ReviewTool): Auth =>
+  t.auth in AUTH_LABEL ? t.auth : t.risk === "read" ? "public" : t.risk === "write" ? "signed_in" : "scoped";
 
 export function ReviewPanel({
   runId,
@@ -79,7 +86,7 @@ export function ReviewPanel({
       tools.map((t) => {
         const on = allowed(t) && left > 0;
         if (on) left--;
-        return [t.id, { approved: on, auth: t.auth }];
+        return [t.id, { approved: on, auth: defaultAuth(t) }];
       })
     );
   });
@@ -88,8 +95,10 @@ export function ReviewPanel({
   // Site files are on every plan; all start selected.
   const [siteOn, setSiteOn] = useState<Record<string, boolean>>(() => Object.fromEntries(siteFixes.map((f) => [f.kind, true])));
   const [siteUrl, setSiteUrl] = useState(detectedUrl ?? "");
+  const [urlTried, setUrlTried] = useState(false);
+  const urlRef = useRef<HTMLInputElement>(null);
   const siteCount = siteFixes.filter((f) => siteOn[f.kind]).length;
-  const urlNeeded = siteFixes.some((f) => siteOn[f.kind] && f.kind !== "llms-txt") && !siteUrl.trim();
+  const urlNeeded = siteFixes.some((f) => siteOn[f.kind] && NEEDS_URL.has(f.kind)) && !siteUrl.trim();
 
   const byPage = useMemo(() => {
     const m = new Map<string, ReviewTool[]>();
@@ -101,7 +110,7 @@ export function ReviewPanel({
   const lockedCount = tools.filter((t) => !allowed(t)).length;
   const overLimit = max !== null && approved > max;
   const set = (id: string, patch: Partial<{ approved: boolean; auth: Auth }>) =>
-    setChoice((c) => ({ ...c, [id]: { approved: c[id]?.approved ?? false, auth: c[id]?.auth ?? "public", ...patch } }));
+    setChoice((c) => ({ ...c, [id]: { approved: c[id]?.approved ?? false, auth: c[id]?.auth ?? defaultAuth(tools.find((t) => t.id === id)!), ...patch } }));
   const all = (on: boolean) => {
     let left = max ?? Infinity;
     setChoice((c) =>
@@ -109,23 +118,31 @@ export function ReviewPanel({
         tools.map((t) => {
           const v = on && allowed(t) && left > 0;
           if (v) left--;
-          return [t.id, { approved: v, auth: c[t.id]?.auth ?? t.auth }];
+          return [t.id, { approved: v, auth: c[t.id]?.auth ?? defaultAuth(t) }];
         })
       )
     );
   };
 
-  const approve = () =>
+  const approve = () => {
+    // The address is the one thing we can't default: point at the field instead of a dead button.
+    if (urlNeeded) {
+      setUrlTried(true);
+      urlRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      urlRef.current?.focus();
+      return;
+    }
     start(async () => {
       setError(null);
       const res = await submitReview(
         runId,
-        tools.map((t) => ({ id: t.id, approved: (choice[t.id]?.approved ?? false) && allowed(t), auth: choice[t.id]?.auth ?? t.auth })),
+        tools.map((t) => ({ id: t.id, approved: (choice[t.id]?.approved ?? false) && allowed(t), auth: choice[t.id]?.auth ?? defaultAuth(t) })),
         { siteFiles: siteFixes.map((f) => ({ kind: f.kind, approved: !!siteOn[f.kind] })), siteUrl: siteUrl.trim() || null }
       );
       if (!res.ok) return setError(res.error);
       router.refresh();
     });
+  };
 
   const cancel = () =>
     start(async () => {
@@ -145,7 +162,7 @@ export function ReviewPanel({
       {siteFixes.length > 0 && (
         <section>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--content-muted)", marginBottom: 6 }}>
-            Site files · help agents find and understand your site
+            Site fixes · help agents find, read and use your site
           </div>
           <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-lg)" }}>
             {siteFixes.map((f, i) => (
@@ -177,16 +194,20 @@ export function ReviewPanel({
             <label style={{ display: "block", padding: "12px 14px", borderTop: "1px solid var(--border)" }}>
               <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Your site&apos;s address</span>
               <input
+                ref={urlRef}
                 className="ag-input"
                 type="url"
                 inputMode="url"
                 placeholder="https://yourcompany.com"
                 value={siteUrl}
                 onChange={(e) => setSiteUrl(e.target.value)}
-                style={{ maxWidth: 420 }}
+                aria-invalid={urlNeeded}
+                style={{ maxWidth: 420, ...(urlNeeded ? { borderColor: "var(--danger)", boxShadow: urlTried ? "0 0 0 3px var(--danger-bg)" : undefined } : {}) }}
               />
-              <span className="ag-muted" style={{ display: "block", fontSize: 12, marginTop: 4 }}>
-                {detectedUrl ? "Found in your repo or on GitHub. " : ""}The sitemap and structured data use it.
+              <span className={urlNeeded ? undefined : "ag-muted"} style={{ display: "block", fontSize: 12, marginTop: 4, ...(urlNeeded ? { color: "var(--danger)" } : {}) }}>
+                {urlNeeded
+                  ? "Needed: the sitemap, structured data and the SDK use your site's address."
+                  : `${detectedUrl ? "Found in your repo or on GitHub. " : ""}The sitemap, structured data and the SDK use it.`}
               </span>
             </label>
           </div>
@@ -268,7 +289,7 @@ export function ReviewPanel({
       ))}
 
       {error && <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>{error}</p>}
-      {urlNeeded && <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>Add your site&apos;s address for the sitemap and structured data, or untick them.</p>}
+      {urlNeeded && urlTried && <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>Add your site&apos;s address above, or untick the site files that need it.</p>}
       {overLimit && (
         <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>
           {plan.name} includes up to {max} tools per site — deselect {approved - (max ?? 0)} or upgrade.
@@ -276,7 +297,7 @@ export function ReviewPanel({
       )}
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button className="ag-btn ag-btn-primary" onClick={approve} disabled={pending || (approved === 0 && siteCount === 0) || overLimit || urlNeeded}>
+        <button className="ag-btn ag-btn-primary" onClick={approve} disabled={pending || (approved === 0 && siteCount === 0) || overLimit}>
           {pending ? "Working…" : `Approve ${label || "nothing"} & write the code`}
         </button>
         <button className="ag-btn" onClick={cancel} disabled={pending}>

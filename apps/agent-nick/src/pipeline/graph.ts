@@ -3,8 +3,11 @@
 //   read_code → detect_framework → find_pages → find_actions → site_files
 //     → propose_tools → review ⏸ → write_code → validate_code → open_pr
 //
-// `site_files` finds the discoverability gaps that aren't tools (llms.txt,
-// sitemap, structured data) and drafts them; they ship in the same PR.
+// `site_files` finds the Agent Readiness gaps that aren't tools (AI rules in
+// robots.txt, llms.txt, sitemap, structured data, Markdown pages, labels) and
+// drafts them, plus the Agentronics SDK; they ship in the same PR. When the
+// SDK is approved, `write_code` creates the site's publishable key so events
+// reach the console as soon as the PR is merged.
 // Only `site_files` (llms.txt), `propose` and `write` call the model. `review` pauses the graph
 // (interrupt) until the customer approves in the console; the checkpoint lives
 // in Postgres, so the run resumes in any process — minutes or days later.
@@ -22,8 +25,9 @@ import { proposeTools } from "./propose.ts";
 import { openPullRequest, prBody, prTitle } from "./publish.ts";
 import { RepoReader } from "./repo.ts";
 import { RunReporter, type StepId } from "./reporter.ts";
+import { ensureSdkKey } from "./sdk.ts";
 import { normaliseUrl, planSiteFiles, writeSiteFiles } from "./sitefiles.ts";
-import type { FileChange, Framework, PageDigest, PageInfo, ReviewDecision, SiteFixKind, SitePlan, ToolProposal } from "./types.ts";
+import type { FileChange, Framework, PageDigest, PageInfo, ReviewDecision, SdkInstall, SiteFixKind, SitePlan, ToolProposal } from "./types.ts";
 import { diffStat, validateChanges } from "./validate.ts";
 
 export interface PipelineDeps {
@@ -50,6 +54,8 @@ const State = Annotation.Root({
   /** Site files the customer approved, and the address they use. */
   siteKinds: Annotation<SiteFixKind[]>,
   siteUrl: Annotation<string | null>,
+  /** The publishable key and site id written into the site (when the SDK is approved). */
+  sdk: Annotation<SdkInstall | null>,
   handlers: Annotation<Record<string, Handler>>,
   changes: Annotation<FileChange[]>,
   toolFiles: Annotation<Record<string, string>>,
@@ -119,8 +125,8 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
   }
 
   /** Tool code, then the approved site files on top of it (so shared files are edited once). */
-  async function build(s: S, reader: RepoReader, tools: ToolProposal[], handlers: Record<string, Handler>, kinds: SiteFixKind[]) {
-    const gen = await generateCode({ reader, fw: s.framework, digests: s.digests, tools, handlers });
+  async function build(s: S, reader: RepoReader, tools: ToolProposal[], handlers: Record<string, Handler>, kinds: SiteFixKind[], sdk: SdkInstall | null) {
+    const gen = await generateCode({ reader, fw: s.framework, digests: s.digests, tools, handlers, sdk: kinds.includes("sdk") ? sdk : null });
     if (s.site && kinds.length) await writeSiteFiles({ result: gen, reader, fw: s.framework, plan: s.site, kinds, url: s.siteUrl ?? null });
     return gen;
   }
@@ -175,11 +181,20 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     return { digests };
   });
 
-  const siteFiles = step("site", "Checking llms.txt, sitemap and structured data", async (s, r, llm) => {
-    const { reader, site: row } = await repo(s);
-    const plan = await planSiteFiles({ reader, fw: s.framework, pages: s.pages, digests: s.digests, llm, repoFullName: row.repoFullName, githubHomepage: row.homepage });
+  const siteFiles = step("site", "Checking robots.txt, llms.txt, sitemap, structured data, Markdown, labels and the SDK", async (s, r, llm) => {
+    const { reader, gh, site: row } = await repo(s);
+    const plan = await planSiteFiles({
+      reader,
+      fw: s.framework,
+      pages: s.pages,
+      digests: s.digests,
+      llm,
+      repoFullName: row.repoFullName,
+      githubHomepage: row.homepage,
+      deployUrl: () => gh.productionUrl(row.repoFullName)
+    });
     if (!plan.fixes.length && !countActions(s.digests)) {
-      throw new Halt("Nothing to add: no user actions to turn into tools, and the site already has llms.txt, a sitemap and structured data.");
+      throw new Halt("Nothing to add: no user actions to turn into tools, and the site already passes every check Agent Nic can fix.");
     }
     const has = plan.present.length ? ` · already has ${plan.present.join(", ")}` : "";
     await r.done(
@@ -256,14 +271,22 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     const { reader } = await repo(s);
     const { handlers, failed } = await writeHandlers(llm, s.approved, s.digests);
     const usable = s.approved.filter((t) => !failed.some((f) => f.name === t.name));
-    const gen = await build(s, reader, usable, handlers, s.siteKinds ?? []);
+    let kinds = s.siteKinds ?? [];
+    let sdk: SdkInstall | null = null;
+    if (kinds.includes("sdk")) {
+      // The key is limited to the site's address, so the SDK needs one.
+      if (s.siteUrl) sdk = await ensureSdkKey(db, s.tenantId, s.siteUrl);
+      else kinds = kinds.filter((k) => k !== "sdk");
+    }
+    const gen = await build(s, reader, usable, handlers, kinds, sdk);
+    if (!sdk && (s.siteKinds ?? []).includes("sdk")) gen.manualSteps.push("Add your site's address in the review to connect the Agentronics SDK.");
     const skipped = [...gen.skipped, ...failed.map((f) => ({ name: f.name, reason: `Generated code failed checks: ${f.issues.join("; ")}` }))];
     await r.done("write", `${gen.changes.length} files (${gen.changes.filter((c) => c.before === null).length} new)`, {
       siteFiles: gen.siteFiles ?? {},
       files: gen.changes.map((c) => ({ path: c.path, new: c.before === null, reason: c.reason })),
       skipped
     });
-    return { handlers, changes: gen.changes, toolFiles: gen.toolFiles, manualSteps: gen.manualSteps, skipped, siteKinds: kindsWritten(gen.siteFiles, s.siteKinds ?? []) };
+    return { handlers, changes: gen.changes, toolFiles: gen.toolFiles, manualSteps: gen.manualSteps, skipped, sdk, siteKinds: kindsWritten(gen.siteFiles, kinds) };
   });
 
   const validate = step("validate", "Checking every changed file", async (s, r) => {
@@ -281,7 +304,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
       const issuesOf = (path: string) => problems.find((p) => p.path === path)?.issues.join("; ");
       const drop = tools.filter((t) => bad.has(toolFiles[t.name] ?? ""));
       for (const t of drop) skipped.push({ name: t.name, reason: `Failed checks in ${toolFiles[t.name]}: ${issuesOf(toolFiles[t.name] ?? "")}` });
-      const gen0 = await build(s, reader, tools, s.handlers, kinds);
+      const gen0 = await build(s, reader, tools, s.handlers, kinds, s.sdk ?? null);
       const dropKinds = kinds.filter((k) => (gen0.siteFiles?.[k] ?? []).some((p) => bad.has(p)) && !drop.length);
       for (const k of dropKinds) {
         const path = (gen0.siteFiles?.[k] ?? []).find((p) => bad.has(p)) ?? "";
@@ -290,7 +313,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
       tools = tools.filter((t) => !drop.includes(t));
       kinds = kinds.filter((k) => !dropKinds.includes(k));
       if (!drop.length && !dropKinds.length) throw new Error(`Generated files failed checks: ${problems.map((p) => `${p.path}: ${p.issues.join("; ")}`).join(" | ")}`);
-      const gen = await build(s, reader, tools, s.handlers, kinds);
+      const gen = await build(s, reader, tools, s.handlers, kinds, s.sdk ?? null);
       ({ changes, toolFiles, manualSteps } = gen);
       siteFilesWritten = gen.siteFiles ?? {};
     }

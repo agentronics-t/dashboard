@@ -100,7 +100,8 @@ export default async function RunPage({ params, searchParams }: { params: Promis
           <p className="ag-muted" style={{ margin: "-6px 0 16px", fontSize: 13.5 }}>
             Found {fmt(run.pagesFound)} pages and {fmt(run.actionsFound)} actions. Untick anything you don&apos;t want agents to use, and choose who may use each
             tool. Read-only tools run without asking; payments and irreversible actions always ask the visitor first.
-            {siteFixes.length > 0 && " Site files add what agents need to find your site: an llms.txt guide, a sitemap and structured data."}
+            {siteFixes.length > 0 &&
+              " Site fixes cover the rest of your Agent Readiness Score (AI rules, llms.txt, sitemap, structured data, Markdown pages, labels) and connect the Agentronics SDK, so events show up here as soon as you merge. Everything starts ticked."}
           </p>
           {reviewPlan && (
             <ReviewPanel

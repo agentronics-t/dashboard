@@ -11,6 +11,9 @@ import type { ToolStrategy } from "@agentronics/intel-schema";
 import { normaliseUrl } from "./pipeline/sitefiles.ts";
 import { SITE_FIX_KINDS, type SiteFixKind } from "./pipeline/types.ts";
 
+/** Site fixes written with the site's address in them. */
+const NEEDS_URL = new Set<SiteFixKind>(["sitemap", "structured-data", "sdk"]);
+
 declare module "fastify" {
   interface FastifyRequest {
     userId: string;
@@ -265,16 +268,16 @@ export function buildServer(deps: ServerDeps) {
           tools: z
             .array(z.object({ id: z.string().uuid(), approved: z.boolean(), auth: z.enum(["public", "signed_in", "scoped"]) }))
             .max(100),
-          siteFiles: z.array(z.object({ kind: z.enum(SITE_FIX_KINDS as [SiteFixKind, ...SiteFixKind[]]), approved: z.boolean() })).max(3).optional(),
+          siteFiles: z.array(z.object({ kind: z.enum(SITE_FIX_KINDS as [SiteFixKind, ...SiteFixKind[]]), approved: z.boolean() })).max(SITE_FIX_KINDS.length).optional(),
           siteUrl: z.string().max(300).nullish()
         })
         .parse(req.body);
 
-      // The sitemap and structured data need the site's real address.
+      // The sitemap, structured data and the SDK's key need the site's real address.
       const siteUrl = normaliseUrl(body.siteUrl);
       if (body.siteUrl && !siteUrl) return reply.status(400).send({ error: "bad_site_url", message: "That doesn't look like your site's address (e.g. https://yourcompany.com)." });
-      const needsUrl = (body.siteFiles ?? []).some((f) => f.approved && f.kind !== "llms-txt");
-      if (needsUrl && !siteUrl) return reply.status(400).send({ error: "site_url_required", message: "Add your site's address: the sitemap and structured data need it." });
+      const needsUrl = (body.siteFiles ?? []).some((f) => f.approved && NEEDS_URL.has(f.kind));
+      if (needsUrl && !siteUrl) return reply.status(400).send({ error: "site_url_required", message: "Add your site's address: the sitemap, structured data and the SDK need it." });
 
       // Plan limits: how many tools, and which kinds, this workspace may ship.
       const plan = await tenantPlan(db, req.tenantId);

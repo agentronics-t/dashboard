@@ -11,7 +11,7 @@
 import ts from "typescript";
 import { parseSource } from "./extract.ts";
 import type { RepoReader } from "./repo.ts";
-import type { FileChange, Framework, PageDigest, SiteFixKind, ToolProposal } from "./types.ts";
+import type { FileChange, Framework, PageDigest, SdkInstall, SiteFixKind, ToolProposal } from "./types.ts";
 
 export interface Handler {
   /** Statements of `async execute(input, options)`; `input` and `signal` are in scope. */
@@ -28,15 +28,33 @@ export interface CodegenResult {
   skipped: { name: string; reason: string }[];
   /** Files written for each site fix (llms.txt, sitemap, structured data) — see sitefiles.ts. */
   siteFiles?: Partial<Record<SiteFixKind, string[]>>;
+  /** Files that load the Agentronics SDK (set when `sdk` is passed to generateCode). */
+  sdkFiles?: string[];
 }
+
+/** The SDK's browser build, pinned: loaded from the CDN so the repo needs no new dependency (and no lockfile change). */
+export const SDK_VERSION = "0.7.0";
+export const SDK_CDN_URL = `https://cdn.jsdelivr.net/npm/@agentronics/sdk@${SDK_VERSION}/dist/index.global.js`;
 
 interface Edit {
   pos: number;
   insert: string;
+  /** Characters replaced at `pos` (default 0: a plain insert). */
+  remove?: number;
 }
 
 const applyEdits = (text: string, edits: Edit[]) =>
-  [...edits].sort((a, b) => b.pos - a.pos).reduce((t, e) => t.slice(0, e.pos) + e.insert + t.slice(e.pos), text);
+  [...edits].sort((a, b) => b.pos - a.pos).reduce((t, e) => t.slice(0, e.pos) + e.insert + t.slice(e.pos + (e.remove ?? 0)), text);
+
+/** An existing data-agent-tool attribute on the tag at `pos` (from an earlier run): where its value is. */
+function existingAnchor(text: string, pos: number): { start: number; end: number; value: string } | null {
+  const tagEnd = text.indexOf(">", pos);
+  const tag = text.slice(pos, tagEnd === -1 ? pos + 400 : tagEnd);
+  const m = /\sdata-agent-tool=(["'])([^"']*)\1/.exec(tag) ?? /\sdata-agent-tool=\{\s*(["'])([^"']*)\1\s*\}/.exec(tag);
+  if (!m) return null;
+  const start = pos + m.index + m[0].indexOf(m[1]!) + 1;
+  return { start, end: start + m[2]!.length, value: m[2]! };
+}
 
 const isMarkup = (p: string) => /\.html?$/i.test(p);
 const htmlAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -83,15 +101,19 @@ export function moduleDir(reader: RepoReader, fw: Framework): string {
   return `${base}${hasSrc ? "src/" : ""}agentronics`;
 }
 
-const routeRegex = (route: string) =>
-  route === "*"
-    ? ".*"
-    : `^${route
-        .split("/")
-        .map((seg) =>
-          /^\[\[?\.\.\./.test(seg) ? ".*" : /^\[.+\]$/.test(seg) ? "[^/]+" : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-        )
-        .join("/")}/?$`;
+/**
+ * The pathnames a page's tools register on. Plain HTML sites are reached as
+ * /about.html as well as /about (and / as /index.html), so those match too.
+ */
+export const routeRegex = (route: string, staticHtml = false) => {
+  if (route === "*") return ".*";
+  if (route === "/" || route === "") return staticHtml ? "^/(index\\.html?)?$" : "^/$";
+  const path = route
+    .split("/")
+    .map((seg) => (/^\[\[?\.\.\./.test(seg) ? ".*" : /^\[.+\]$/.test(seg) ? "[^/]+" : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+    .join("/");
+  return staticHtml ? `^${path}(\\.html?|/index\\.html?)?/?$` : `^${path}/?$`;
+};
 
 const DOM_HELPER = `
 /** Fill the visible form/control for a UI-only action and trigger it, the way a person would. */
@@ -134,10 +156,10 @@ export const toolTitle = (name: string) => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
-function toolLiteral(t: ToolProposal, execute: string): string {
+function toolLiteral(t: ToolProposal, execute: string, staticHtml: boolean): string {
   const annotations = [`readOnlyHint: ${t.readOnly}`, ...(t.consequential ? ["consequentialHint: true"] : [])].join(", ");
   return `  {
-    pages: ${JSON.stringify([routeRegex(t.page)])},
+    pages: ${JSON.stringify([routeRegex(t.page, staticHtml)])},
     tool: {
       name: ${JSON.stringify(t.name)},
       title: ${JSON.stringify(toolTitle(t.name))},
@@ -157,14 +179,77 @@ ${execute
   }`;
 }
 
+/** Loads the SDK's browser build once and starts it with the site's publishable key. */
+function sdkLoader(sdk: SdkInstall): string {
+  return `
+// The Agentronics SDK: agent detection, your access rules and reviews from the
+// console, and traces back to it. Loaded from the CDN (pinned version), so
+// there is nothing to install. The publishable key is public by design: it can
+// only send data from your site's own address.
+const SDK_URL = ${JSON.stringify(SDK_CDN_URL)};
+const SDK_OPTIONS = {
+  publishableKey: ${JSON.stringify(sdk.publishableKey)},
+  siteId: ${JSON.stringify(sdk.siteId)},
+  trace: { gateway: true }
+};
+
+type AgentronicsGlobal = { init(options: typeof SDK_OPTIONS): AgentronicsClientLike };
+let sdkClient: Promise<AgentronicsClientLike | null> | null = null;
+
+/** The site's Agentronics client, started once per page load (null if the SDK can't load). */
+export function connectAgentronics(): Promise<AgentronicsClientLike | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  sdkClient ??= new Promise((resolve) => {
+    const w = window as unknown as { Agentronics?: AgentronicsGlobal; __agentronics?: AgentronicsClientLike };
+    const start = () => {
+      let started: AgentronicsClientLike | null = null;
+      try {
+        w.__agentronics ??= w.Agentronics?.init(SDK_OPTIONS);
+        started = w.__agentronics ?? null;
+      } catch {
+        started = null;
+      }
+      if (!started) return resolve(null);
+      const ready = started;
+      // Your console's rules and descriptions first (briefly), so the tools publish with them.
+      const synced = ready.syncConfig?.().catch(() => undefined) ?? Promise.resolve();
+      void Promise.race([synced, new Promise((r) => setTimeout(r, 1500))]).then(() => resolve(ready));
+    };
+    if (w.__agentronics || w.Agentronics) return start();
+    const script = document.createElement("script");
+    script.src = SDK_URL;
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.onload = start;
+    script.onerror = () => resolve(null);
+    document.head.appendChild(script);
+  });
+  return sdkClient;
+}
+`;
+}
+
+const NO_SDK = `
+/** No Agentronics SDK on this site: tools register with the browser directly. */
+export function connectAgentronics(): Promise<AgentronicsClientLike | null> {
+  return Promise.resolve(null);
+}
+`;
+
 /** The tools module (TypeScript source; transpiled for JavaScript projects). */
-export function toolsModule(tools: ToolProposal[], handlers: Record<string, Handler>, imports: string[]): string {
+export function toolsModule(
+  tools: ToolProposal[],
+  handlers: Record<string, Handler>,
+  imports: string[],
+  opts: { staticHtml?: boolean; sdk?: SdkInstall | null } = {}
+): string {
   const entries = tools.map((t) =>
     toolLiteral(
       t,
       t.strategy === "dom" || t.strategy === "form"
         ? `return fillAndAct(${JSON.stringify(t.name)}, ${JSON.stringify(t.page === "*" ? "this site" : t.page)}, input, signal);`
-        : (handlers[t.name]?.body ?? `return { error: "Not available." };`)
+        : (handlers[t.name]?.body ?? `return { error: "Not available." };`),
+      !!opts.staticHtml
     )
   );
   const needsDom = tools.some((t) => t.strategy === "dom" || t.strategy === "form");
@@ -173,9 +258,9 @@ export function toolsModule(tools: ToolProposal[], handlers: Record<string, Hand
 // (via AbortSignal) when the visitor navigates away. Browsers without WebMCP
 // skip all of this. Spec: https://webmachinelearning.github.io/webmcp/
 //
-// Using the Agentronics SDK? Pass your client as the third argument of
-// registerAgentronicsTools() and the tools register through it, so the rules,
-// reviews and approved descriptions you manage in the console apply.
+// With the Agentronics SDK the tools register through it (see
+// connectAgentronics), so the rules, reviews and approved descriptions you
+// manage in the console apply.
 ${imports.join("\n")}
 
 type ToolInput = Record<string, unknown>;
@@ -197,6 +282,10 @@ interface ModelContextLike {
 export interface AgentronicsClientLike {
   registerTool(tool: ModelContextTool): () => void;
   publishToWebMcp(): unknown;
+  /** Pull the rules, approved descriptions and site memory set in the console. */
+  syncConfig?(): Promise<unknown>;
+  /** Report the registered tools to the console. */
+  syncTools?(): Promise<unknown>;
 }
 
 function modelContext(): ModelContextLike | null {
@@ -204,6 +293,7 @@ function modelContext(): ModelContextLike | null {
   return (document as unknown as { modelContext?: ModelContextLike }).modelContext ?? null;
 }
 ${needsDom ? DOM_HELPER : ""}
+${opts.sdk ? sdkLoader(opts.sdk) : NO_SDK}
 const TOOLS: { pages: string[]; tool: ModelContextTool }[] = [
 ${entries.join(",\n")}
 ];
@@ -214,6 +304,7 @@ export function registerAgentronicsTools(pathname: string, signal: AbortSignal, 
   if (client) {
     const offs = here.map(({ tool }) => client.registerTool(tool));
     client.publishToWebMcp();
+    if (here.length) void client.syncTools?.().catch(() => undefined);
     signal.addEventListener("abort", () => {
       offs.forEach((off) => off());
       client.publishToWebMcp();
@@ -234,7 +325,10 @@ export function startAgentronicsTools(): void {
   const sync = () => {
     controller.abort();
     controller = new AbortController();
-    registerAgentronicsTools(window.location.pathname, controller.signal);
+    const { signal } = controller;
+    void connectAgentronics().then((sdk) => {
+      if (!signal.aborted) registerAgentronicsTools(window.location.pathname, signal, sdk ?? undefined);
+    });
   };
   sync();
   window.addEventListener("popstate", sync);
@@ -253,33 +347,39 @@ export function toJs(source: string, fileName: string): string {
 
 const NEXT_APP_MOUNT = `"use client";
 
-// Registers this site's WebMCP tools for the current route — added by Agentronics Agent Nic.
+// Starts the Agentronics SDK and registers this site's WebMCP tools for the
+// current route — added by Agentronics Agent Nic.
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { registerAgentronicsTools } from "./webmcp-tools";
+import { connectAgentronics, registerAgentronicsTools } from "./webmcp-tools";
 
 export function AgentronicsWebMcp() {
   const pathname = usePathname();
   useEffect(() => {
     const controller = new AbortController();
-    registerAgentronicsTools(pathname, controller.signal);
+    void connectAgentronics().then((sdk) => {
+      if (!controller.signal.aborted) registerAgentronicsTools(pathname, controller.signal, sdk ?? undefined);
+    });
     return () => controller.abort();
   }, [pathname]);
   return null;
 }
 `;
 
-const NEXT_PAGES_MOUNT = `// Registers this site's WebMCP tools for the current route — added by Agentronics Agent Nic.
+const NEXT_PAGES_MOUNT = `// Starts the Agentronics SDK and registers this site's WebMCP tools for the
+// current route — added by Agentronics Agent Nic.
 import { useEffect } from "react";
 import { useRouter } from "next/router";
-import { registerAgentronicsTools } from "./webmcp-tools";
+import { connectAgentronics, registerAgentronicsTools } from "./webmcp-tools";
 
 export function AgentronicsWebMcp() {
   const { asPath } = useRouter();
   const pathname = asPath.split(/[?#]/)[0] ?? "/";
   useEffect(() => {
     const controller = new AbortController();
-    registerAgentronicsTools(pathname, controller.signal);
+    void connectAgentronics().then((sdk) => {
+      if (!controller.signal.aborted) registerAgentronicsTools(pathname, controller.signal, sdk ?? undefined);
+    });
     return () => controller.abort();
   }, [pathname]);
   return null;
@@ -300,7 +400,9 @@ function mountEdits(path: string, text: string, importSpec: string, anchor: "chi
     n.forEachChild(visit);
   };
   visit(sf);
-  const imp = { pos: importInsertPos(text, path), insert: `\nimport { AgentronicsWebMcp } from "${importSpec}";` };
+  const at = importInsertPos(text, path);
+  // No imports yet: the import goes on the first line, then a blank line.
+  const imp = { pos: at, insert: at === 0 ? `import { AgentronicsWebMcp } from "${importSpec}";\n\n` : `\nimport { AgentronicsWebMcp } from "${importSpec}";` };
   if (found) {
     const node = found as ts.Node;
     // `return <Component {...pageProps} />` has no JSX parent: wrap both in a fragment.
@@ -320,8 +422,11 @@ export async function generateCode(opts: {
   digests: PageDigest[];
   tools: ToolProposal[];
   handlers: Record<string, Handler>;
+  /** Also load the Agentronics SDK on every page, with this key. */
+  sdk?: SdkInstall | null;
 }): Promise<CodegenResult> {
   const { reader, fw, digests, tools, handlers } = opts;
+  const sdk = opts.sdk ?? null;
   const result: CodegenResult = { changes: [], toolFiles: {}, manualSteps: [], skipped: [] };
   const edits = new Map<string, Edit[]>();
   const addEdit = (path: string, e: Edit[]) => edits.set(path, [...(edits.get(path) ?? []), ...e]);
@@ -345,12 +450,18 @@ export async function generateCode(opts: {
       continue;
     }
     const markup = isMarkup(target.file);
+    // Re-run: the element already has an anchor — keep it, renamed if the tool's name changed.
+    const prev = existingAnchor(text, target.pos);
+    if (prev) {
+      if (prev.value !== t.name) addEdit(target.file, [{ pos: prev.start, insert: t.name, remove: prev.end - prev.start }]);
+      continue;
+    }
     addEdit(target.file, [{ pos: insertAt, insert: markup ? markupAttrs({ "data-agent-tool": t.name }) : ` data-agent-tool=${JSON.stringify(t.name)}` }]);
   }
 
-  // 2) Every tool → one module, plus a mount point.
+  // 2) Every tool → one module, plus a mount point (the SDK rides on the same module).
   const scriptTools = tools.filter((t) => !result.skipped.some((s) => s.name === t.name));
-  if (scriptTools.length) {
+  if (scriptTools.length || sdk) {
     const dir = moduleDir(reader, fw);
     const ext = fw.typescript ? "ts" : "js";
     const modulePath = `${dir ? `${dir}/` : ""}${fw.kind === "static-html" ? "agentronics-webmcp" : "webmcp-tools"}.${fw.kind === "static-html" ? "js" : ext}`;
@@ -369,14 +480,16 @@ export async function generateCode(opts: {
     let source = toolsModule(
       scriptTools.filter((t) => fw.kind !== "static-html" || t.strategy !== "server_action"),
       handlers,
-      importLines
+      importLines,
+      { staticHtml: fw.kind === "static-html", sdk }
     );
     if (fw.kind === "static-html") source = `${toJs(source, "agentronics-webmcp.ts")}\nstartAgentronicsTools();\n`;
     else if (!fw.typescript) source = toJs(source, "webmcp-tools.ts");
-    result.changes.push({ path: modulePath, content: source, before: null, reason: "WebMCP tools module" });
+    result.changes.push({ path: modulePath, content: source, before: null, reason: sdk ? "WebMCP tools and the Agentronics SDK" : "WebMCP tools module" });
     for (const t of scriptTools) result.toolFiles[t.name] = modulePath;
+    if (sdk) result.sdkFiles = [modulePath];
 
-    const mounted = await mount(reader, fw, dir, modulePath, scriptTools, addEdit, result);
+    const mounted = await mount(reader, fw, dir, modulePath, scriptTools, addEdit, result, !!sdk);
     if (!mounted) {
       result.manualSteps.push(
         `Call \`startAgentronicsTools()\` from \`${modulePath}\` once when your app starts (we couldn't find a safe place to add it).`
@@ -400,7 +513,8 @@ async function mount(
   modulePath: string,
   scriptTools: ToolProposal[],
   addEdit: (path: string, e: Edit[]) => void,
-  result: CodegenResult
+  result: CodegenResult,
+  everyPage = false
 ): Promise<boolean> {
   const tsx = fw.typescript ? "tsx" : "jsx";
   if (fw.kind === "next-app" && fw.appDir) {
@@ -408,10 +522,12 @@ async function mount(
     if (!layout) return false;
     const mountPath = `${dir}/AgentronicsWebMcp.${tsx}`;
     const text = await reader.read(layout);
-    const e = text === null ? null : mountEdits(layout, text, relImport(layout, mountPath), "children");
-    if (!e) return false;
+    // Mounted by an earlier run: refresh the component, leave the layout alone.
+    const already = text?.includes("<AgentronicsWebMcp") ?? false;
+    const e = text === null || already ? null : mountEdits(layout, text, relImport(layout, mountPath), "children");
+    if (!e && !already) return false;
     result.changes.push({ path: mountPath, content: fw.typescript ? NEXT_APP_MOUNT : toJs(NEXT_APP_MOUNT, "m.tsx"), before: null, reason: "Registers tools per route" });
-    addEdit(layout, e);
+    if (e) addEdit(layout, e);
     return true;
   }
   if (fw.kind === "next-pages" && fw.pagesDir) {
@@ -420,6 +536,7 @@ async function mount(
     result.changes.push({ path: mountPath, content: fw.typescript ? NEXT_PAGES_MOUNT : toJs(NEXT_PAGES_MOUNT, "m.tsx"), before: null, reason: "Registers tools per route" });
     if (app) {
       const text = await reader.read(app);
+      if (text?.includes("<AgentronicsWebMcp")) return true;
       const e = text === null ? null : mountEdits(app, text, relImport(app, mountPath), "Component");
       if (!e) return false;
       addEdit(app, e);
@@ -443,6 +560,7 @@ export default function App({ Component, pageProps }${fw.typescript ? ": AppProp
   if (fw.kind === "react-spa" && fw.entry) {
     const text = await reader.read(fw.entry);
     if (text === null) return false;
+    if (text.includes("startAgentronicsTools(")) return true;
     addEdit(fw.entry, [
       { pos: importInsertPos(text, fw.entry), insert: `\nimport { startAgentronicsTools } from "${relImport(fw.entry, modulePath)}";` },
       { pos: text.length, insert: `${text.endsWith("\n") ? "" : "\n"}\n// Agentronics Agent Nic: expose this app's WebMCP tools.\nstartAgentronicsTools();\n` }
@@ -455,15 +573,18 @@ export default function App({ Component, pageProps }${fw.typescript ? ": AppProp
       .list(/\.html?$/i)
       .filter((f) => {
         const route = `/${f.slice(fw.root ? fw.root.length + 1 : 0).replace(/\.html?$/i, "").replace(/(^|\/)index$/, "")}`.replace(/\/+$/, "") || "/";
-        return pages.has("*") || pages.has(route);
+        // The SDK goes on every page; tools only on the pages they belong to.
+        return everyPage || pages.has("*") || pages.has(route);
       });
     let any = false;
     for (const file of htmlFiles) {
       const text = await reader.read(file);
       const at = text?.lastIndexOf("</body>") ?? -1;
       if (text === null || at === -1) continue;
-      addEdit(file, [{ pos: at, insert: `  <script type="module" src="${relImport(file, modulePath)}.js"></script>\n` }]);
+      const src = `${relImport(file, modulePath)}.js`;
       any = true;
+      if (text.includes(`src="${src}"`)) continue; // added by an earlier run
+      addEdit(file, [{ pos: at, insert: `  <script type="module" src="${src}"></script>\n` }]);
     }
     return any;
   }

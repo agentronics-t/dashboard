@@ -126,11 +126,29 @@ export interface JsonSchema {
 }
 
 /**
- * Site files: the discoverability fixes from the Agent Readiness Score that
- * aren't tools — an llms.txt guide, a sitemap and schema.org structured data.
+ * Site files: the Agent Readiness Score fixes that aren't tools — AI rules in
+ * robots.txt, an llms.txt guide, a sitemap, schema.org structured data, a
+ * Markdown version of each page, labels for icon-only buttons and unlabeled
+ * fields — plus the Agentronics SDK, so the site reports to the console.
  */
-export type SiteFixKind = "llms-txt" | "sitemap" | "structured-data";
-export const SITE_FIX_KINDS: SiteFixKind[] = ["llms-txt", "sitemap", "structured-data"];
+export type SiteFixKind = "robots-ai" | "llms-txt" | "sitemap" | "structured-data" | "markdown" | "labels" | "sdk";
+export const SITE_FIX_KINDS: SiteFixKind[] = ["robots-ai", "llms-txt", "sitemap", "structured-data", "markdown", "labels", "sdk"];
+
+/** An element that gets an aria-label (see labels.ts). */
+export interface LabelFix {
+  file: string;
+  key: string;
+  kind: "control" | "field";
+  tag: string;
+  snippet: string;
+  label: string;
+}
+
+/** The SDK settings written into the site: a publishable key (public by design) and the site id. */
+export interface SdkInstall {
+  publishableKey: string;
+  siteId: string;
+}
 
 export interface SiteFacts {
   /** The public address of the site, when we could find it. */
@@ -170,6 +188,8 @@ export interface SitePlan {
   llms: LlmsDraft | null;
   /** Static routes for the sitemap. */
   routes: string[];
+  /** Elements that get an aria-label (absent on runs planned before labels existed). */
+  labels?: LabelFix[];
 }
 
 export interface ReviewDecision {

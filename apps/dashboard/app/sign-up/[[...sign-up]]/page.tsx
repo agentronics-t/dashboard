@@ -9,7 +9,7 @@ export const dynamic = "force-static";
 export default function SignUpPage() {
   return (
     <AuthShell variant="sign-up">
-      <SignUp signInUrl="/sign-in" fallbackRedirectUrl="/detect" />
+      <SignUp signInUrl="/sign-in" fallbackRedirectUrl="/agent-nic" />
     </AuthShell>
   );
 }

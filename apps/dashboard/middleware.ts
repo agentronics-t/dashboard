@@ -19,7 +19,7 @@ function afterSignIn(url: URL): URL {
       // fall through
     }
   }
-  return new URL("/detect", url);
+  return new URL("/agent-nic", url);
 }
 
 const isAuthPath = (p: string) => p.startsWith("/sign-in") || p.startsWith("/sign-up");

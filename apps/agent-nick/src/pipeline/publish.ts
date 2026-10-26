@@ -8,7 +8,15 @@ const RISK_LABEL = { read: "Read-only", write: "Changes data", payment: "Payment
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-const SHORT: Record<SiteFix["kind"], string> = { "llms-txt": "llms.txt", sitemap: "sitemap", "structured-data": "structured data" };
+const SHORT: Record<SiteFix["kind"], string> = {
+  "robots-ai": "AI rules",
+  "llms-txt": "llms.txt",
+  sitemap: "sitemap",
+  "structured-data": "structured data",
+  markdown: "Markdown pages",
+  labels: "labels",
+  sdk: "Agentronics SDK"
+};
 
 export function prTitle(tools: number, siteFixes: SiteFix[]): string {
   const parts = [tools ? plural(tools, "WebMCP tool") : "", siteFixes.map((f) => SHORT[f.kind]).join(", ")].filter(Boolean);
