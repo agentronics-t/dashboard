@@ -42,7 +42,6 @@ export interface PlanSpec {
   };
   features: {
     toolGroups: boolean;
-    signatureUpdates: "monthly" | "weekly" | "live";
     webBotAuthAndOAuth: boolean;
     advancedAuth: boolean;
     customIdentityProvider: boolean;
@@ -81,13 +80,12 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       seats: 1
     },
     features: {
-      toolGroups: NO,
-      signatureUpdates: "monthly",
+      toolGroups: YES,
       webBotAuthAndOAuth: NO,
       advancedAuth: NO,
       customIdentityProvider: NO,
       rateLimits: NO,
-      domEnforcement: NO,
+      domEnforcement: YES,
       toolAccessEnforced: NO,
       siteMemory: NO,
       webhookExport: NO,
@@ -117,12 +115,11 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     },
     features: {
       toolGroups: YES,
-      signatureUpdates: "weekly",
       webBotAuthAndOAuth: YES,
       advancedAuth: NO,
       customIdentityProvider: NO,
       rateLimits: NO,
-      domEnforcement: NO,
+      domEnforcement: YES,
       toolAccessEnforced: YES,
       siteMemory: YES,
       webhookExport: NO,
@@ -152,7 +149,6 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     },
     features: {
       toolGroups: YES,
-      signatureUpdates: "live",
       webBotAuthAndOAuth: YES,
       advancedAuth: YES,
       customIdentityProvider: NO,
@@ -187,7 +183,6 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     },
     features: {
       toolGroups: YES,
-      signatureUpdates: "live",
       webBotAuthAndOAuth: YES,
       advancedAuth: YES,
       customIdentityProvider: YES,

@@ -43,6 +43,8 @@ export const getTenantId = cache(async (): Promise<string> => {
     .values({ name: orgKey, clerkOrgId: orgKey })
     .onConflictDoUpdate({ target: schema.tenants.clerkOrgId, set: { clerkOrgId: orgKey } })
     .returning({ id: schema.tenants.id });
+  // A new team workspace starts on Free: one seat until it upgrades.
+  if (orgId) await (await import("./seats")).syncSeats(created.id, "free");
   return created.id;
 });
 

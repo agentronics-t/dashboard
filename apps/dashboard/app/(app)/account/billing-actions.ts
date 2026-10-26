@@ -7,6 +7,7 @@ import { schema } from "@agentronics/intel-schema/db";
 import { eq } from "drizzle-orm";
 import { dodo, getWorkspacePlan, planProductId } from "@/lib/billing";
 import { db, getTenantId, requireWorkspaceAdmin } from "@/lib/tenant";
+import { syncSeats } from "@/lib/seats";
 
 export type BillingResult = { ok: true; url?: string } | { ok: false; error: string };
 
@@ -39,6 +40,7 @@ export async function choosePlan(plan: string, interval: string = "month", next?
       await client.subscriptions.changePlan(row.dodoSubscriptionId, { product_id: productId, quantity: 1, proration_billing_mode: "prorated_immediately" });
       // The subscription.plan_changed webhook confirms it; reflect it now so limits update immediately.
       await db().update(schema.workspacePlans).set({ plan, billingInterval: billing, updatedAt: new Date() }).where(eq(schema.workspacePlans.tenantId, tenantId));
+      await syncSeats(tenantId, plan);
       revalidatePath("/", "layout");
       return { ok: true };
     }

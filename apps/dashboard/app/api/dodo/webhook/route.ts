@@ -1,6 +1,7 @@
 import { eq, or } from "drizzle-orm";
 import { schema } from "@agentronics/intel-schema/db";
-import { isBillingInterval, isPaidPlanId } from "@agentronics/intel-schema";
+import { isBillingInterval, isPaidPlanId, resolvePlan } from "@agentronics/intel-schema";
+import { syncSeats } from "@/lib/seats";
 import { dodo, planFromProduct, planStatus } from "@/lib/billing";
 import { db } from "@/lib/tenant";
 
@@ -64,6 +65,11 @@ export async function POST(req: Request) {
     .returning({ tenantId: schema.workspacePlans.tenantId });
   if (!updated.length && tenantId && plan) {
     await db().insert(schema.workspacePlans).values({ tenantId, plan, ...values }).onConflictDoNothing();
+  }
+  // Team seats follow the effective plan (a cancelled or on-hold plan is Free).
+  for (const t of new Set([...updated.map((u) => u.tenantId), ...(tenantId ? [tenantId] : [])])) {
+    const [row] = await db().select().from(schema.workspacePlans).where(eq(schema.workspacePlans.tenantId, t));
+    await syncSeats(t, resolvePlan(row));
   }
   return Response.json({ ok: true });
 }

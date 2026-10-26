@@ -30,6 +30,13 @@ export async function savePolicy(raw: SdkPolicyInput): Promise<void> {
     }
   }
 
+  // Per-agent rate limits are a Pro feature (intel-api also drops them from
+  // lower plans' config, so a rule saved before a downgrade stops applying).
+  if (p.rateLimit && !spec.features.rateLimits) {
+    const next = upgradeFor((pl) => pl.features.rateLimits);
+    throw new Error(`Per-agent rate limits aren't included in the ${spec.name} plan${next ? ` — upgrade to ${next.name}` : ""}.`);
+  }
+
   const values = {
     siteId: p.siteId,
     tool: p.tool,

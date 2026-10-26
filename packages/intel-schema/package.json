@@ -13,6 +13,10 @@
     "./db": {
       "types": "./dist/db/client.d.ts",
       "default": "./dist/db/client.js"
+    },
+    "./webhooks": {
+      "types": "./dist/webhooks.d.ts",
+      "default": "./dist/webhooks.js"
     }
   },
   "scripts": {
