@@ -51,6 +51,9 @@ export const tenants = pgTable("tenants", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   clerkOrgId: text("clerk_org_id").unique(),
+  // The workspace's website, asked for on the Agent Nic page: the scans below
+  // and Agent Nic's review use it.
+  siteUrl: text("site_url"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow()
@@ -751,3 +754,25 @@ export const sdkWebhooks = pgTable("sdk_webhooks", {
   lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
+
+// Agent Readiness Score scans of the workspace's site (the landing page's
+// scanner, run from the console): the first one when the address is saved,
+// one before each Agent Nic run and one after its PR is merged, so the Agent
+// Nic page can show before → after. `result` is the scanner's full JSON.
+export const siteScans = pgTable(
+  "site_scans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    // first | before | after | manual
+    kind: text("kind").notNull(),
+    runId: uuid("run_id").references(() => agentNickRuns.id, { onDelete: "set null" }),
+    score: integer("score").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [index("site_scans_tenant_created_idx").on(t.tenantId, t.createdAt)]
+);

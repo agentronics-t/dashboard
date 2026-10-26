@@ -63,6 +63,7 @@ export function ReviewPanel({
   tools,
   siteFixes = [],
   detectedUrl = null,
+  detectedSource = null,
   plan,
   plans,
   billingReady
@@ -72,6 +73,8 @@ export function ReviewPanel({
   siteFixes?: ReviewSiteFix[];
   /** The address Agent Nic found (GitHub homepage, package.json, metadataBase…), if any. */
   detectedUrl?: string | null;
+  /** Where that address came from, in words. */
+  detectedSource?: string | null;
   plan: ReviewPlan;
   plans: PlanCard[];
   billingReady: boolean;
@@ -207,7 +210,7 @@ export function ReviewPanel({
               <span className={urlNeeded ? undefined : "ag-muted"} style={{ display: "block", fontSize: 12, marginTop: 4, ...(urlNeeded ? { color: "var(--danger)" } : {}) }}>
                 {urlNeeded
                   ? "Needed: the sitemap, structured data and the SDK use your site's address."
-                  : `${detectedUrl ? "Found in your repo or on GitHub. " : ""}The sitemap, structured data and the SDK use it.`}
+                  : `${detectedUrl ? `From ${detectedSource ?? "your repo"}. ` : ""}The sitemap, structured data and the SDK use it.`}
               </span>
             </label>
           </div>

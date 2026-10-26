@@ -98,10 +98,12 @@ export async function findSiteUrl(
   reader: RepoReader,
   fw: Framework,
   githubHomepage: string | null,
-  deployUrl: string | null = null
+  deployUrl: string | null = null,
+  workspaceUrl: string | null = null
 ): Promise<{ url: string | null; source: string | null }> {
   const pkg = await packageJson(reader, fw);
   const tries: [string | null | undefined, string][] = [
+    [workspaceUrl, "the website you saved in the console"],
     [githubHomepage, "the repository's website on GitHub"],
     [pkg.homepage, "package.json homepage"]
   ];
@@ -433,12 +435,14 @@ export async function planSiteFiles(opts: {
   llm: Llm | null;
   repoFullName: string;
   githubHomepage: string | null;
+  /** The website saved on the Agent Nic page: what the customer told us, so it wins. */
+  workspaceUrl?: string | null;
   /** Looked up only when nothing in the repo names the address. */
   deployUrl?: () => Promise<string | null>;
 }): Promise<SitePlan> {
   const { reader, fw, pages, digests, llm } = opts;
   const pkg = await packageJson(reader, fw);
-  let found = await findSiteUrl(reader, fw, opts.githubHomepage);
+  let found = await findSiteUrl(reader, fw, opts.githubHomepage, null, opts.workspaceUrl ?? null);
   if (!found.url && opts.deployUrl) found = await findSiteUrl(reader, fw, null, await opts.deployUrl().catch(() => null));
   const routes = staticRoutes(pages);
   const titles = new Map(digests.filter((d) => d.title).map((d) => [d.route, d.title as string]));

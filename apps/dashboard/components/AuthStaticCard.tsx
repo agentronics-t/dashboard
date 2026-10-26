@@ -4,10 +4,11 @@
 export type AuthVariant = "sign-in" | "sign-up";
 
 const COPY = {
+  // Sign-in signs new people up too (withSignUp), and Clerk then drops the "Sign up" link.
   "sign-in": {
     title: "Sign in to agentronics",
-    subtitle: "Welcome back! Please sign in to continue",
-    footer: ["Don’t have an account?", "Sign up"]
+    subtitle: "New here? We’ll create your account.",
+    footer: null
   },
   "sign-up": {
     title: "Create your account",
@@ -76,9 +77,11 @@ export function StaticCard({ variant }: { variant: AuthVariant }) {
         </div>
       </div>
       <div className="ag-authcard__footer">
-        <div className="ag-authcard__switch">
-          {copy.footer[0]} <b>{copy.footer[1]}</b>
-        </div>
+        {copy.footer && (
+          <div className="ag-authcard__switch">
+            {copy.footer[0]} <b>{copy.footer[1]}</b>
+          </div>
+        )}
         <div className="ag-authcard__secured">
           Secured by <b>clerk</b>
         </div>

@@ -9,6 +9,7 @@ import { upgradeFor } from "@agentronics/intel-schema";
 import { getRun, timeAgo } from "@/lib/agentNick";
 import { billingConfigured, getWorkspacePlan } from "@/lib/billing";
 import { planCards } from "@/lib/planCards";
+import { getSiteUrl } from "@/lib/siteScore";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +59,13 @@ export default async function RunPage({ params, searchParams }: { params: Promis
     };
   });
   // The "Site files" step's drafts, and what the review approved.
-  const siteStep = events.find((e) => e.step === "site" && e.kind === "done")?.data as { fixes?: ReviewSiteFix[]; facts?: { url?: string | null } } | undefined;
+  const siteStep = events.find((e) => e.step === "site" && e.kind === "done")?.data as
+    | { fixes?: ReviewSiteFix[]; facts?: { url?: string | null; urlSource?: string | null } }
+    | undefined;
+  // The address for the review: what Agent Nic found (the saved website comes first there), else the saved website.
+  const savedUrl = run.status === "awaiting_review" ? await getSiteUrl(tenantId) : null;
+  const detectedUrl = siteStep?.facts?.url ?? savedUrl ?? site.homepage ?? null;
+  const detectedSource = siteStep?.facts?.url ? (siteStep.facts.urlSource ?? null) : savedUrl ? "the website you saved in the console" : site.homepage ? "the repository's website on GitHub" : null;
   const siteFixes = siteStep?.fixes ?? [];
   const decision = (run.decision ?? {}) as { siteFiles?: { kind: string; approved: boolean }[] };
   const siteApproved = siteFixes.filter((f) => decision.siteFiles?.some((d) => d.kind === f.kind && d.approved)).map((f) => f.title);
@@ -108,7 +115,8 @@ export default async function RunPage({ params, searchParams }: { params: Promis
               runId={run.id}
               tools={reviewTools}
               siteFixes={siteFixes}
-              detectedUrl={siteStep?.facts?.url ?? site.homepage ?? null}
+              detectedUrl={detectedUrl}
+              detectedSource={detectedSource}
               plan={reviewPlan}
               plans={planCards()}
               billingReady={billingConfigured()}

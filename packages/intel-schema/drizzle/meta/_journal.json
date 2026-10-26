@@ -64,6 +64,13 @@
       "when": 1792946861483,
       "tag": "0008_sdk_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793030009746,
+      "tag": "0009_site_scans",
+      "breakpoints": true
     }
   ]
 }

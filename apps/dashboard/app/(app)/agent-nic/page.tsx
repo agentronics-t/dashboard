@@ -4,6 +4,9 @@ import { statusBadgeProps } from "@/components/agent-nick/Pipeline";
 import { RepoPicker } from "@/components/agent-nick/RepoPicker";
 import { ConnectGitHubButton, GitHubConnectedSignal, RefreshOnGitHubReturn } from "@/components/agent-nick/GitHubConnect";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { SiteScore, SiteUrlForm, type ScorePoint } from "@/components/agent-nick/SiteScore";
+import { after } from "next/server";
+import { afterScanDue, getScoreCard, recordScan, type StoredScan } from "@/lib/siteScore";
 import { agentNickConfigured, getInstallations, getSites, githubAppSlug, timeAgo } from "@/lib/agentNick";
 import { getPlanUsage, getWorkspacePlan } from "@/lib/billing";
 import { limitLabel } from "@agentronics/intel-schema";
@@ -24,7 +27,19 @@ const ERRORS: Record<string, string> = {
 export default async function AgentNickPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const tenantId = await getTenantId();
-  const [installs, sites, { spec: plan }, usage] = await Promise.all([getInstallations(tenantId), getSites(tenantId), getWorkspacePlan(tenantId), getPlanUsage(tenantId)]);
+  const [installs, sites, { spec: plan }, usage, score] = await Promise.all([
+    getInstallations(tenantId),
+    getSites(tenantId),
+    getWorkspacePlan(tenantId),
+    getPlanUsage(tenantId),
+    getScoreCard(tenantId)
+  ]);
+  // Agent Nic's PR is merged: score the site again once it has redeployed (retried while it shows no gain).
+  if (score && afterScanDue(score)) {
+    const { url, pendingAfter } = score;
+    after(() => recordScan(tenantId, url, "after", pendingAfter!.runId));
+  }
+  const point = (s: StoredScan | null): ScorePoint | null => s && { score: s.score, band: s.result.band.key, at: s.createdAt.toISOString() };
   const runsLeft = plan.limits.agentNickRunsPerMonth === null ? null : Math.max(0, plan.limits.agentNickRunsPerMonth - usage.runs);
   const configured = agentNickConfigured() && !!githubAppSlug();
 
@@ -47,8 +62,22 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
       <PageHeader
         title="Agent Nic"
         subtitle="Our agents write WebMCP tools, a sitemap, llms.txt and structured data into your own code and open a pull request. You review, you merge."
-        action={active ? <LiveRefresh intervalMs={4000} /> : undefined}
+        action={active ? <LiveRefresh intervalMs={4000} /> : score?.pendingAfter ? <LiveRefresh intervalMs={30_000} /> : undefined}
       />
+
+      <Card style={{ marginBottom: 18 }}>
+        {score ? (
+          <SiteScore
+            url={score.url}
+            before={point(score.before)}
+            after={point(score.after)}
+            waiting={!!score.pendingAfter}
+            latest={(score.after ?? score.before)?.result ?? null}
+          />
+        ) : (
+          <SiteUrlForm />
+        )}
+      </Card>
 
       <RefreshOnGitHubReturn />
       {sp.connected && <GitHubConnectedSignal />}
