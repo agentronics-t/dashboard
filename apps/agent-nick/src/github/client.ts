@@ -109,6 +109,26 @@ export class GitHub {
   }
 
   /** Head commit of a branch and its root tree. */
+  /**
+   * The site's live address from its latest production deployment (Vercel,
+   * Netlify and others report one to GitHub), or null. Needs the app's
+   * "Deployments: read" permission; without it this quietly returns null.
+   */
+  async productionUrl(fullName: string): Promise<string | null> {
+    try {
+      const deployments = await this.request<{ id: number; environment: string }[]>("GET", `/repos/${fullName}/deployments?per_page=10`);
+      const prod = deployments.filter((d) => /^production$/i.test(d.environment)).slice(0, 3);
+      for (const d of prod) {
+        const statuses = await this.request<{ state: string; environment_url?: string | null }[]>("GET", `/repos/${fullName}/deployments/${d.id}/statuses?per_page=5`);
+        const url = statuses.find((st) => st.state === "success" && st.environment_url)?.environment_url;
+        if (url) return url;
+      }
+    } catch {
+      // no permission, or no deployments
+    }
+    return null;
+  }
+
   async branchHead(fullName: string, branch: string): Promise<{ sha: string; treeSha: string }> {
     const ref = await this.request<{ object: { sha: string } }>(
       "GET",

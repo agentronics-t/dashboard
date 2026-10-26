@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, createVerify, createHmac } from "node:crypto";
 import { describe, it } from "node:test";
 import { appJwt, verifyWebhookSignature, type GitHub, type TreeEntry } from "../github/client.ts";
-import { generateCode } from "./codegen.ts";
+import { generateCode, routeRegex, SDK_CDN_URL } from "./codegen.ts";
 import { digestPages } from "./extract.ts";
 import { detectFramework, discoverPages } from "./framework.ts";
 import { checkHandler } from "./handlers.ts";
 import { normalize } from "./propose.ts";
 import { RepoReader } from "./repo.ts";
-import { normaliseUrl, planSiteFiles, writeSiteFiles } from "./sitefiles.ts";
+import { applyLabels, findLabelTargets } from "./labels.ts";
+import { htmlToMarkdown } from "./markdown.ts";
+import { siteOrigins } from "./sdk.ts";
+import { aiRobotsBlock, normaliseUrl, planSiteFiles, robotsTalksToAi, writeSiteFiles } from "./sitefiles.ts";
 import type { Llm } from "../llm/gemini.ts";
 import type { PageDigest, ToolProposal } from "./types.ts";
 import { validateChanges } from "./validate.ts";
@@ -304,7 +307,7 @@ describe("site files (llms.txt, sitemap, structured data)", () => {
     const plan = await planSiteFiles({ reader, fw, pages, digests, llm: fakeLlm, repoFullName: "acme/shop", githubHomepage: "shop.example.com" });
 
     assert.equal(plan.facts.url, "https://shop.example.com");
-    assert.deepEqual(plan.fixes.map((f) => f.kind), ["llms-txt", "sitemap", "structured-data"]);
+    assert.deepEqual(plan.fixes.map((f) => f.kind), ["robots-ai", "llms-txt", "sitemap", "structured-data", "markdown", "labels", "sdk"]);
     assert.deepEqual(plan.routes, ["/", "/contact"]); // no /products/[id], no /login
     assert.ok(!plan.llms?.sections[0]?.links.some((l) => l.path === "/made-up"), "drops links to pages that don't exist");
 
@@ -328,19 +331,90 @@ describe("site files (llms.txt, sitemap, structured data)", () => {
     assert.deepEqual(validateChanges(out.changes), []);
   });
 
+  it("adds AI rules, Markdown, labels and the SDK to a Next.js app", async () => {
+    const files = { ...FILES, "public/robots.txt": "User-agent: *\nDisallow: /admin\n" };
+    const reader = fakeRepo(files);
+    const fw = await detectFramework(reader);
+    const pages = discoverPages(reader, fw);
+    const digests = await digestPages(reader, fw, pages);
+    const plan = await planSiteFiles({ reader, fw, pages, digests, llm: null, repoFullName: "acme/shop", githubHomepage: "https://shop.example.com" });
+    assert.deepEqual(plan.labels?.map((l) => [l.file, l.label]), [
+      ["app/login/page.tsx", "Email"],
+      ["app/login/page.tsx", "Password"],
+      ["components/Header.tsx", "Email"]
+    ]);
+    const sdk = { publishableKey: "agtx_pk_live_test", siteId: "shop.example.com" };
+    const out = await generateCode({ reader, fw, digests, tools: [], handlers: {}, sdk });
+    await writeSiteFiles({ result: out, reader, fw, plan, kinds: ["robots-ai", "markdown", "labels", "sdk"], url: null });
+    const get = (p: string) => out.changes.find((c) => c.path === p)?.content ?? "";
+
+    // AI agents keep the site's own limits.
+    assert.match(get("public/robots.txt"), /User-agent: ChatGPT-User\n[\s\S]*Content-Signal: search=yes, ai-input=yes, ai-train=no\nDisallow: \/admin\n$/);
+    assert.match(get("app/md/[[...path]]/route.ts"), /import \{ htmlToMarkdown \} from "\.\.\/\.\.\/\.\.\/agentronics\/markdown";/);
+    assert.match(get("agentronics/AgentronicsMarkdownLink.tsx"), /type="text\/markdown" href=\{`\/md/);
+    assert.match(get("app/layout.tsx"), /<AgentronicsWebMcp \/>/);
+    assert.match(get("app/layout.tsx"), /<AgentronicsMarkdownLink \/>/);
+    assert.match(get("app/login/page.tsx"), /<input aria-label="Email" name="email" type="email" \/>/);
+    // The SDK: pinned CDN build, the site's key, tools through it.
+    const tools = get("agentronics/webmcp-tools.ts");
+    assert.ok(tools.includes(JSON.stringify(SDK_CDN_URL)));
+    assert.match(tools, /publishableKey: "agtx_pk_live_test"/);
+    assert.match(get("agentronics/AgentronicsWebMcp.tsx"), /connectAgentronics\(\)\.then/);
+    assert.deepEqual(out.siteFiles?.sdk, ["agentronics/webmcp-tools.ts"]);
+    assert.deepEqual(validateChanges(out.changes), []);
+  });
+
+  it("fixes a plain HTML shop the way the scanner checks it", async () => {
+    const page = (title: string, body: string) =>
+      `<!doctype html>\n<html>\n<head>\n<title>${title}</title>\n</head>\n<body>\n<a href="cart.html" class="icon-btn"><svg></svg></a>\n<button class="menu-btn" type="button"><svg></svg></button>\n<main><h1>${title}</h1>${body}</main>\n<form action="thanks.html"><input type="email" name="email" placeholder="Your email"><button type="submit"><svg></svg></button></form>\n</body>\n</html>\n`;
+    const files = {
+      "index.html": page("Ember & Oak", "<p>Fresh coffee.</p><ul><li>Light</li><li>Dark</li></ul>"),
+      "classes.html": page("Classes", '<a href="https://www.instagram.com/"><svg></svg></a>'),
+      "robots.txt": "User-agent: *\nAllow: /\n"
+    };
+    const reader = fakeRepo(files);
+    const fw = await detectFramework(reader);
+    const pages = discoverPages(reader, fw);
+    const plan = await planSiteFiles({ reader, fw, pages, digests: [], llm: null, repoFullName: "acme/ember", githubHomepage: "https://ember.example" });
+    const sdk = { publishableKey: "agtx_pk_live_test", siteId: "ember.example" };
+    const out = await generateCode({ reader, fw, digests: [], tools: [], handlers: {}, sdk });
+    await writeSiteFiles({ result: out, reader, fw, plan, kinds: ["robots-ai", "sitemap", "markdown", "labels", "sdk"], url: null });
+    const get = (p: string) => out.changes.find((c) => c.path === p)?.content ?? "";
+
+    assert.ok(robotsTalksToAi(get("robots.txt")));
+    assert.match(get("robots.txt"), /Sitemap: https:\/\/ember\.example\/sitemap\.xml\n$/);
+    assert.match(get("index.md"), /^# Ember & Oak\n\nFresh coffee\.\n\n- Light\n- Dark\n$/);
+    for (const html of ["index.html", "classes.html"]) {
+      const t = get(html);
+      assert.match(t, /<link rel="alternate" type="text\/markdown" href="(index|classes)\.md">\n<\/head>/);
+      assert.match(t, /<a aria-label="Cart" href="cart\.html"/);
+      assert.match(t, /<button aria-label="Open menu" class="menu-btn"/);
+      assert.match(t, /<input aria-label="Your email" type="email"/);
+      assert.match(t, /<button aria-label="Submit" type="submit">/);
+      assert.match(t, /<script type="module" src="\.\/agentronics-webmcp\.js"><\/script>\n<\/body>/); // the SDK on every page
+    }
+    assert.match(get("classes.html"), /<a aria-label="Instagram" href="https:\/\/www\.instagram\.com\/">/);
+    assert.match(get("agentronics-webmcp.js"), /siteId: "ember\.example"/);
+    assert.deepEqual(validateChanges(out.changes), []);
+  });
+
   it("skips what the repo already has", async () => {
     const files = {
       ...FILES,
+      "package.json": JSON.stringify({ dependencies: { next: "15.0.0", react: "19.0.0", "@agentronics/sdk": "0.7.0" } }),
       "public/llms.txt": "# Shop\n",
+      "public/robots.txt": "User-agent: *\nContent-Signal: ai-train=no\nAllow: /\n",
       "app/sitemap.ts": "export default function sitemap() { return []; }",
-      "app/layout.tsx": FILES["app/layout.tsx"]!.replace("<body>", '<body><script type="application/ld+json">{}</script>')
+      "app/layout.tsx": FILES["app/layout.tsx"]!.replace("<body>", '<body><link rel="alternate" type="text/markdown" href="/index.md" /><script type="application/ld+json">{}</script>'),
+      "app/login/page.tsx": '<form><input name="email" aria-label="Email" /></form>',
+      "components/Header.tsx": "export function Header() { return <header>Shop</header>; }"
     };
     const reader = fakeRepo(files);
     const fw = await detectFramework(reader);
     const pages = discoverPages(reader, fw);
     const plan = await planSiteFiles({ reader, fw, pages, digests: [], llm: null, repoFullName: "acme/shop", githubHomepage: null });
     assert.deepEqual(plan.fixes, []);
-    assert.deepEqual(plan.present.sort(), ["llms-txt", "sitemap", "structured-data"]);
+    assert.deepEqual(plan.present.sort(), ["labels", "llms-txt", "markdown", "robots-ai", "sdk", "sitemap", "structured-data"]);
   });
 
   it("writes static files and head JSON-LD for a plain HTML site", async () => {
@@ -380,6 +454,54 @@ describe("site files (llms.txt, sitemap, structured data)", () => {
     assert.match(get("agentronics/AgentronicsStructuredData.jsx"), /import Head from "next\/head";/); // no tsconfig → JavaScript
     assert.match(get("public/sitemap.xml"), /<loc>https:\/\/pages\.example\.com\/<\/loc>/);
     assert.deepEqual(validateChanges(out.changes), []);
+  });
+
+  it("keeps the site's own robots rules for AI agents", () => {
+    const block = aiRobotsBlock("User-agent: Googlebot\nDisallow: /tmp\n\nUser-agent: *\nDisallow: /cart\nAllow: /\n");
+    assert.match(block, /User-agent: Claude-User\n/);
+    assert.match(block, /Disallow: \/cart\nAllow: \/\n$/);
+    assert.doesNotMatch(block, /\/tmp/);
+    assert.match(aiRobotsBlock(null), /Allow: \/\n$/);
+  });
+
+  it("matches .html addresses on plain HTML sites", () => {
+    const home = new RegExp(routeRegex("/", true));
+    const classes = new RegExp(routeRegex("/classes", true));
+    assert.ok(home.test("/") && home.test("/index.html") && !home.test("/shop.html"));
+    assert.ok(classes.test("/classes") && classes.test("/classes.html") && classes.test("/classes/") && !classes.test("/classes-old.html"));
+    assert.ok(new RegExp(routeRegex("/")).test("/") && !new RegExp(routeRegex("/about")).test("/about.html"));
+  });
+
+  it("names icon-only links and buttons in JSX", async () => {
+    const text = `import Link from "next/link";
+import { ShoppingCartIcon, MenuIcon } from "lucide-react";
+export function Nav({ label }: { label: string }) {
+  return (
+    <nav>
+      <Link href="/cart"><ShoppingCartIcon /></Link>
+      <button onClick={() => {}}><MenuIcon /></button>
+      <button>{label}</button>
+      <a href="https://github.com/acme" title="GitHub"><svg /></a>
+      <label>Search <input name="q" /></label>
+      <input name="first_name" />
+    </nav>
+  );
+}
+`;
+    const targets = await findLabelTargets({ texts: new Map([["components/Nav.tsx", text]]), llm: null });
+    assert.deepEqual(targets.map((t) => t.label), ["Cart", "Menu", "First name"]);
+    const edited = applyLabels("components/Nav.tsx", text.replace("<Link href", '<Link data-agent-tool="go_cart" href'), targets) ?? "";
+    assert.match(edited, /<Link aria-label="Cart" data-agent-tool="go_cart" href="\/cart">/);
+    assert.match(edited, /<input aria-label="First name" name="first_name" \/>/);
+    assert.deepEqual(validateChanges([{ path: "components/Nav.tsx", content: edited, before: text, reason: "" }]), []);
+  });
+
+  it("converts HTML to Markdown and lists the site's origins", () => {
+    const md = htmlToMarkdown('<html><head><title>Plans</title><script>x()</script></head><body><nav><a href="/">Home</a></nav><main><h2>Pro</h2><p>For <strong>teams</strong>. <a href="/buy">Buy</a></p></main></body></html>', "https://shop.example/pricing");
+    assert.equal(md, "# Plans\n\n## Pro\n\nFor **teams**. [Buy](https://shop.example/buy)\n");
+    assert.deepEqual(siteOrigins("https://shop.example/x"), ["https://shop.example", "https://www.shop.example"]);
+    assert.deepEqual(siteOrigins("https://www.shop.example"), ["https://www.shop.example", "https://shop.example"]);
+    assert.deepEqual(siteOrigins("https://ember-oak.vercel.app"), ["https://ember-oak.vercel.app"]);
   });
 
   it("normalises addresses and refuses local ones", () => {

@@ -1,5 +1,7 @@
 // Site files: the Agent Readiness Score fixes that aren't WebMCP tools.
 //
+//   AI rules        — robots.txt names the AI agents that browse for people and
+//                     states a Content-Signal (search, AI answers, no training)
 //   llms.txt        — a short Markdown guide for AI tools (Gemini drafts it
 //                     from the README and the page titles)
 //   sitemap         — every static route (app/sitemap.ts on the Next.js App
@@ -7,6 +9,11 @@
 //                     Sitemap: line in an existing robots.txt
 //   structured data — schema.org Organization + WebSite JSON-LD in the root
 //                     layout / _app / index.html
+//   Markdown        — every page as Markdown, linked from the page (markdown.ts)
+//   labels          — aria-labels for icon-only buttons and unlabeled fields (labels.ts)
+//   SDK             — the Agentronics SDK on every page with a publishable key
+//                     made for the site, so events reach the console once the
+//                     PR is merged (written by codegen.ts with the tools)
 //
 // `planSiteFiles` runs before the review: it checks what the repo already has
 // and drafts what's missing, so the customer sees exactly what will be added.
@@ -15,8 +22,10 @@
 
 import ts from "typescript";
 import type { Llm } from "../llm/gemini.ts";
-import { importInsertPos, moduleDir, relImport, toJs, type CodegenResult } from "./codegen.ts";
+import { importInsertPos, moduleDir, relImport, SDK_CDN_URL, toJs, type CodegenResult } from "./codegen.ts";
 import { parseSource } from "./extract.ts";
+import { applyLabels, findLabelTargets } from "./labels.ts";
+import { htmlToMarkdown, MARKDOWN_RUNTIME, markdownLinkComponent, nextAppMarkdownRoute, nextPagesMarkdownRoute } from "./markdown.ts";
 import type { RepoReader } from "./repo.ts";
 import type { FileChange, Framework, LlmsDraft, PageDigest, PageInfo, SiteFacts, SiteFix, SiteFixKind, SitePlan } from "./types.ts";
 
@@ -85,7 +94,12 @@ function spaIndexHtml(reader: RepoReader, fw: Framework): string | null {
 }
 
 /** The site's public address: GitHub homepage, package.json, metadataBase, CNAME, or a canonical link. */
-export async function findSiteUrl(reader: RepoReader, fw: Framework, githubHomepage: string | null): Promise<{ url: string | null; source: string | null }> {
+export async function findSiteUrl(
+  reader: RepoReader,
+  fw: Framework,
+  githubHomepage: string | null,
+  deployUrl: string | null = null
+): Promise<{ url: string | null; source: string | null }> {
   const pkg = await packageJson(reader, fw);
   const tries: [string | null | undefined, string][] = [
     [githubHomepage, "the repository's website on GitHub"],
@@ -108,7 +122,54 @@ export async function findSiteUrl(reader: RepoReader, fw: Framework, githubHomep
     const url = reader.exists(cname) ? normaliseUrl(((await reader.read(cname, { anyFile: true })) ?? "").split("\n")[0]) : null;
     if (url) return { url, source: cname };
   }
+  const deployed = normaliseUrl(deployUrl);
+  if (deployed) return { url: deployed, source: "your latest production deployment" };
   return { url: null, source: null };
+}
+
+/* ------------------------------ robots.txt ------------------------------ */
+
+/** The agents that browse and search for people — the ones a site wants to let in. */
+export const AI_USER_AGENTS = ["ChatGPT-User", "OAI-SearchBot", "Claude-User", "Claude-SearchBot", "Perplexity-User", "PerplexityBot"];
+const AI_NAMES = /^\s*user-agent\s*:\s*(gptbot|chatgpt-user|oai-searchbot|claudebot|claude-user|claude-searchbot|anthropic-ai|perplexitybot|perplexity-user|google-extended|applebot-extended|ccbot|meta-externalagent|amazonbot|duckassistbot|mistralai-user)\b/im;
+
+/** robots.txt already speaks to AI agents (names one, or declares a Content-Signal). */
+export const robotsTalksToAi = (text: string) => AI_NAMES.test(text) || /^\s*content-signal\s*:/im.test(text);
+
+/** The rules of the `User-agent: *` group, so AI agents keep the same limits as everyone else. */
+function starRules(text: string): string[] {
+  const rules: string[] = [];
+  let inStar = false;
+  let lastWasAgent = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/#.*$/, "").trim();
+    const m = /^([a-z-]+)\s*:\s*(.*)$/i.exec(line);
+    if (!m) continue;
+    const key = m[1]!.toLowerCase();
+    if (key === "user-agent") {
+      if (!lastWasAgent) inStar = false;
+      if (m[2]!.trim() === "*") inStar = true;
+      lastWasAgent = true;
+    } else {
+      lastWasAgent = false;
+      if (inStar && (key === "allow" || key === "disallow")) rules.push(`${key === "allow" ? "Allow" : "Disallow"}: ${m[2]!.trim()}`);
+    }
+  }
+  return rules;
+}
+
+/** The group Agent Nic adds: named AI agents, the site's usual rules, and a Content-Signal. */
+export function aiRobotsBlock(existing: string | null): string {
+  const rules = existing ? starRules(existing) : [];
+  return [
+    "# AI agents that browse and search for people: the same pages as everyone else.",
+    "# Content-Signal (contentsignals.org): show in search and AI answers, don't train on it.",
+    "# Added by Agentronics Agent Nic.",
+    ...AI_USER_AGENTS.map((a) => `User-agent: ${a}`),
+    "Content-Signal: search=yes, ai-input=yes, ai-train=no",
+    ...(rules.length ? rules : ["Allow: /"]),
+    ""
+  ].join("\n");
 }
 
 /** What the repo already has. */
@@ -139,7 +200,22 @@ export async function auditSite(reader: RepoReader, fw: Framework, pages: PageIn
       break;
     }
   }
-  return { "llms-txt": llms, sitemap, "structured-data": structured };
+  const robotsPath = join(publicDir(fw), "robots.txt");
+  const robotsText = reader.exists(robotsPath) ? await reader.read(robotsPath, { anyFile: true }) : null;
+  const robotsModule = fw.appDir ? reader.list(new RegExp(`^${esc(fw.appDir)}/robots\\.(t|j)s$`))[0] : undefined;
+  const robotsModuleText = robotsModule ? await reader.read(robotsModule) : null;
+  const robotsAi = robotsText && robotsTalksToAi(robotsText) ? robotsPath : robotsModuleText && /content-signal|chatgpt-user|claude-user|gptbot/i.test(robotsModuleText) ? robotsModule! : null;
+
+  const markdown =
+    [...texts].find(([, t]) => /type=["']text\/markdown["']|["']text\/markdown["']/.test(t))?.[0] ??
+    (fw.appDir ? reader.list(new RegExp(`^${esc(fw.appDir)}/md/`))[0] : undefined) ??
+    null;
+
+  const sdkDep = ["@agentronics/sdk", "@agentronics/react"].find((d) => pkg.deps.has(d));
+  const sdk = sdkDep ? `${sdkDep} (package.json)` : [...texts].find(([, t]) => /@agentronics\/sdk|Agentronics\.init\(/.test(t))?.[0] ?? null;
+
+  // Labels are found per element in planSiteFiles.
+  return { "robots-ai": robotsAi, "llms-txt": llms, sitemap, "structured-data": structured, markdown, labels: null, sdk };
 }
 
 /* ------------------------------- llms.txt -------------------------------- */
@@ -295,10 +371,58 @@ export function AgentronicsStructuredData() {
 /* -------------------------------- plan ----------------------------------- */
 
 const TITLES: Record<SiteFixKind, string> = {
+  "robots-ai": "AI rules in robots.txt",
   "llms-txt": "llms.txt guide for AI",
   sitemap: "Sitemap",
-  "structured-data": "Structured data"
+  "structured-data": "Structured data",
+  markdown: "Markdown version of each page",
+  labels: "Labels for buttons and fields",
+  sdk: "Agentronics SDK (events in your console)"
 };
+
+/** The files whose buttons and fields get labels: the HTML pages, or the app's components. */
+function labelFiles(reader: RepoReader, fw: Framework, pages: PageInfo[]): string[] {
+  if (fw.kind === "static-html") return pages.filter((p) => !PRIVATE.test(p.route)).map((p) => p.file).slice(0, 60);
+  const base = fw.root ? `${esc(fw.root)}/` : "";
+  return reader
+    .list(new RegExp(`^${base}.*\\.(tsx|jsx)$`))
+    .filter((f) => !/(^|\/)(__tests__|tests?|stories|storybook)\/|\.(test|spec|stories)\.(t|j)sx$/.test(f) && !/(^|\/)agentronics\//.test(f))
+    .slice(0, 250);
+}
+
+/** The Markdown fix for this framework: the files it adds, or null if we can't add it here. */
+function markdownFiles(reader: RepoReader, fw: Framework, pages: PageInfo[], llms: LlmsDraft | null): string[] | null {
+  const dir = moduleDir(reader, fw);
+  const ext = fw.typescript ? "ts" : "js";
+  const tsx = fw.typescript ? "tsx" : "jsx";
+  if (fw.kind === "static-html") {
+    const html = pages.filter((p) => !PRIVATE.test(p.route) && !/\/(404|500)$/.test(p.route)).map((p) => p.file);
+    return html.length ? html.flatMap((f) => [f.replace(/\.html?$/i, ".md"), f]) : null;
+  }
+  if (fw.kind === "next-app" && fw.appDir) {
+    const layout = rootFiles(reader, fw)[0];
+    if (!layout || reader.list(new RegExp(`^${esc(fw.appDir)}/md(/|\\.)`)).length) return null;
+    return [`${fw.appDir}/md/[[...path]]/route.${ext}`, `${dir}/markdown.${ext}`, `${dir}/AgentronicsMarkdownLink.${tsx}`, layout];
+  }
+  if (fw.kind === "next-pages" && fw.pagesDir) {
+    if (reader.list(new RegExp(`^${esc(fw.pagesDir)}/api/md(/|\\.)`)).length) return null;
+    const app = [".tsx", ".jsx", ".js"].map((e) => `${fw.pagesDir}/_app${e}`).find((p) => reader.has(p)) ?? `${fw.pagesDir}/_app.${tsx}`;
+    return [`${fw.pagesDir}/api/md/[[...path]].${ext}`, `${dir}/markdown.${ext}`, `${dir}/AgentronicsMarkdownLink.${tsx}`, app];
+  }
+  const index = spaIndexHtml(reader, fw);
+  return index && llms ? [join(publicDir(fw), "index.md"), index] : null;
+}
+
+/** Where the SDK lands: the tools module and its mount point (see codegen.ts). */
+function sdkFilesFor(reader: RepoReader, fw: Framework): string[] {
+  const dir = moduleDir(reader, fw);
+  const tsx = fw.typescript ? "tsx" : "jsx";
+  if (fw.kind === "static-html") return [join(dir, "agentronics-webmcp.js"), "every page (one script tag)"];
+  const module = `${dir}/webmcp-tools.${fw.typescript ? "ts" : "js"}`;
+  if (fw.kind === "next-app") return [module, `${dir}/AgentronicsWebMcp.${tsx}`, rootFiles(reader, fw)[0] ?? `${fw.appDir}/layout.${tsx}`];
+  if (fw.kind === "next-pages") return [module, `${dir}/AgentronicsWebMcp.${tsx}`, `${fw.pagesDir}/_app.${tsx}`];
+  return [module, fw.entry ?? "your entry file"];
+}
 
 /** Before the review: what's missing, and a draft of each fix. */
 export async function planSiteFiles(opts: {
@@ -309,10 +433,13 @@ export async function planSiteFiles(opts: {
   llm: Llm | null;
   repoFullName: string;
   githubHomepage: string | null;
+  /** Looked up only when nothing in the repo names the address. */
+  deployUrl?: () => Promise<string | null>;
 }): Promise<SitePlan> {
   const { reader, fw, pages, digests, llm } = opts;
   const pkg = await packageJson(reader, fw);
-  const found = await findSiteUrl(reader, fw, opts.githubHomepage);
+  let found = await findSiteUrl(reader, fw, opts.githubHomepage);
+  if (!found.url && opts.deployUrl) found = await findSiteUrl(reader, fw, null, await opts.deployUrl().catch(() => null));
   const routes = staticRoutes(pages);
   const titles = new Map(digests.filter((d) => d.title).map((d) => [d.route, d.title as string]));
   const repoName = opts.repoFullName.split("/").pop() ?? opts.repoFullName;
@@ -381,6 +508,22 @@ export async function planSiteFiles(opts: {
       preview: routes.map((r) => `${url}${r === "/" ? "/" : r}`).join("\n")
     });
   }
+  if (!have["robots-ai"]) {
+    const robots = join(pub, "robots.txt");
+    const robotsModule = fw.appDir ? reader.list(new RegExp(`^${esc(fw.appDir)}/robots\\.(t|j)s$`))[0] : undefined;
+    // An app/robots.ts builds robots.txt in code; we don't rewrite that.
+    if (!robotsModule) {
+      const existing = reader.exists(robots) ? await reader.read(robots, { anyFile: true }) : null;
+      fixes.unshift({
+        kind: "robots-ai",
+        title: TITLES["robots-ai"],
+        found: existing === null ? "No robots.txt." : "robots.txt is written for search engines only. It says nothing to AI agents.",
+        plan: `${existing === null ? "Add a robots.txt that names" : "Name"} the AI agents that browse for people (ChatGPT, Claude, Perplexity), keep your usual rules for them, and state your AI usage preference: show in search and AI answers, no training. Change the Content-Signal line if you prefer otherwise.`,
+        files: [robots],
+        preview: aiRobotsBlock(existing)
+      });
+    }
+  }
   if (!have["structured-data"]) {
     const root = rootFiles(reader, fw)[0];
     const files =
@@ -398,7 +541,60 @@ export async function planSiteFiles(opts: {
       });
     }
   }
-  return { facts, fixes, present, llms, routes };
+  if (!have.markdown) {
+    const files = markdownFiles(reader, fw, pages, llms);
+    if (files) {
+      const how =
+        fw.kind === "static-html"
+          ? `a .md copy of each of your ${files.length / 2} page${files.length === 2 ? "" : "s"}, linked from the page`
+          : fw.kind === "next-app"
+            ? "a /md route that serves any page as Markdown (/md/pricing is /pricing), linked from every page"
+            : fw.kind === "next-pages"
+              ? "an /api/md route that serves any page as Markdown, linked from every page"
+              : "/index.md (from the llms.txt draft), linked from the home page";
+      fixes.push({
+        kind: "markdown",
+        title: TITLES.markdown,
+        found: "Agents only get your HTML. No clean Markdown version.",
+        plan: `Add ${how}, so agents read your content without the page's code around it.`,
+        // Not trimmed: for plain HTML this is the list of pages that get a .md copy.
+        files: files.filter((f, i) => files.indexOf(f) === i),
+        preview:
+          fw.kind === "static-html"
+            ? htmlToMarkdown((await reader.read(files[1]!)) ?? "", facts.url ?? "").slice(0, 1500)
+            : `<link rel="alternate" type="text/markdown" href="${fw.kind === "next-pages" ? "/api/md" : fw.kind === "next-app" ? "/md" : "/index.md"}…">`
+      });
+    }
+  }
+
+  const labels = await findLabelTargets({ texts: await reader.readMany(labelFiles(reader, fw, pages)), llm });
+  if (labels.length) {
+    const controls = labels.filter((l) => l.kind === "control").length;
+    const fields = labels.length - controls;
+    const files = [...new Set(labels.map((l) => l.file))];
+    fixes.push({
+      kind: "labels",
+      title: TITLES.labels,
+      found: [controls ? `${controls} button${controls === 1 ? "" : "s"} or link${controls === 1 ? "" : "s"} with only an icon` : "", fields ? `${fields} form field${fields === 1 ? "" : "s"} with no label` : ""]
+        .filter(Boolean)
+        .join(", ") + ".",
+      plan: "Add an aria-label to each, so agents (and screen readers) know what every button does and what every field wants. Nothing visible changes.",
+      files: files.slice(0, 12),
+      preview: labels.slice(0, 40).map((l) => `${l.file}: ${l.snippet.slice(0, 90)}  →  "${l.label}"`).join("\n")
+    });
+  } else present.push("labels");
+
+  if (!have.sdk) {
+    fixes.push({
+      kind: "sdk",
+      title: TITLES.sdk,
+      found: "The Agentronics SDK isn't on the site, so nothing reaches your console.",
+      plan: `Load the Agentronics SDK on every page with a publishable key Agent Nic creates for ${facts.url ?? "your site's address"}. Agent visits, tool calls and the access rules you set here start working as soon as you merge. No keys to copy, nothing to install.`,
+      files: sdkFilesFor(reader, fw),
+      preview: `<script src="${SDK_CDN_URL}">\nAgentronics.init({ publishableKey: "agtx_pk_live_… (created when you approve)", siteId: "${facts.url ? new URL(facts.url).hostname : "your-site"}", trace: { gateway: true } })`
+    });
+  }
+  return { facts, fixes, present, llms, routes, labels };
 }
 
 /* -------------------------------- write ---------------------------------- */
@@ -442,7 +638,7 @@ function mountNextTo(path: string, text: string, importLine: string, element: st
     edited = `${text.slice(0, body)}\n        ${element}${text.slice(body)}`;
   }
   const imp = importInsertPos(edited, path);
-  return `${edited.slice(0, imp)}\n${importLine}${edited.slice(imp)}`;
+  return imp === 0 ? `${importLine}\n${/^import /.test(edited) ? "" : "\n"}${edited}` : `${edited.slice(0, imp)}\n${importLine}${edited.slice(imp)}`;
 }
 
 /** At write time: add the approved site files on top of the tool changes. */
@@ -464,6 +660,17 @@ export async function writeSiteFiles(opts: {
     (written[kind] ??= []).push(c.path);
   };
   const want = (k: SiteFixKind) => opts.kinds.includes(k) && plan.fixes.some((f) => f.kind === k);
+  const robots = join(pub, "robots.txt");
+  const hasRobots = () => reader.exists(robots) || result.changes.some((c) => c.path === robots);
+
+  if (want("robots-ai")) {
+    if (reader.exists(robots)) {
+      const ok = await editFile(result, reader, robots, "AI agent rules", (t) => (robotsTalksToAi(t) ? null : `${t}${t.endsWith("\n") ? "" : "\n"}\n${aiRobotsBlock(t)}`), true);
+      if (ok) written["robots-ai"] = [robots];
+    } else {
+      add("robots-ai", { path: robots, content: `User-agent: *\nAllow: /\n\n${aiRobotsBlock(null)}`, before: null, reason: "robots.txt with AI agent rules" });
+    }
+  }
 
   if (want("llms-txt") && plan.llms) {
     add("llms-txt", { path: join(pub, "llms.txt"), content: renderLlms(plan.llms, url), before: null, reason: "llms.txt guide for AI tools" });
@@ -476,8 +683,7 @@ export async function writeSiteFiles(opts: {
     } else {
       add("sitemap", { path: join(pub, "sitemap.xml"), content: renderSitemapXml(url, plan.routes), before: null, reason: "Sitemap of every static page" });
     }
-    const robots = join(pub, "robots.txt");
-    if (reader.exists(robots)) {
+    if (hasRobots()) {
       const ok = await editFile(
         result,
         reader,
@@ -500,43 +706,10 @@ export async function writeSiteFiles(opts: {
       const dir = moduleDir(reader, fw);
       const tsx = fw.typescript ? "tsx" : "jsx";
       const compPath = `${dir}/AgentronicsStructuredData.${tsx}`;
-      const element = "<AgentronicsStructuredData />";
-      const importFrom = (file: string) => `import { AgentronicsStructuredData } from "${relImport(file, compPath)}";`;
-      // the file that renders it: root layout (App Router) or _app (Pages Router; ours if the tools just created one)
-      const host =
-        fw.kind === "next-app" && fw.appDir
-          ? [".tsx", ".jsx", ".js"].map((e) => `${fw.appDir}/layout${e}`).find((p) => reader.has(p)) ?? null
-          : [".tsx", ".jsx", ".js"].map((e) => `${fw.pagesDir}/_app${e}`).find((p) => reader.has(p) || result.changes.some((c) => c.path === p)) ?? null;
-      let mountedIn: string | null = null;
-      if (host) {
-        const ok = await editFile(result, reader, host, "structured data", (t) =>
-          mountNextTo(host, t, importFrom(host), element, fw.kind === "next-app" ? "children" : "Component")
-        );
-        if (ok) mountedIn = host;
-      } else if (fw.kind === "next-pages" && fw.pagesDir) {
-        mountedIn = `${fw.pagesDir}/_app.${tsx}`;
-        result.changes.push({
-          path: mountedIn,
-          before: null,
-          reason: "Custom App to add the structured data",
-          content: `${fw.typescript ? `import type { AppProps } from "next/app";\n` : ""}${importFrom(mountedIn)}
-
-export default function App({ Component, pageProps }${fw.typescript ? ": AppProps" : ""}) {
-  return (
-    <>
-      <Component {...pageProps} />
-      ${element}
-    </>
-  );
-}
-`
-        });
-      }
+      const mountedIn = await mountInNextRoot(result, reader, fw, compPath, "AgentronicsStructuredData", "structured data");
       if (mountedIn) {
         add("structured-data", { path: compPath, content: structuredComponent(data, fw), before: null, reason: "schema.org structured data" });
         written["structured-data"]!.push(mountedIn);
-      } else {
-        result.manualSteps.push(`Render \`${element}\` from \`${compPath}\` once in your root layout (we couldn't find a safe place to add it).`);
       }
     } else {
       const index = spaIndexHtml(reader, fw);
@@ -547,14 +720,122 @@ export default function App({ Component, pageProps }${fw.typescript ? ": AppProp
       const ok =
         !!index &&
         (await editFile(result, reader, index, "structured data", (t) => {
-          const at = t.search(/<\/head>/i);
-          if (at === -1) return null;
-          const lineStart = t.lastIndexOf("\n", at) + 1;
-          return `${t.slice(0, lineStart)}${block}${t.slice(lineStart)}`;
+          return beforeHeadEnd(t, block);
         }));
       if (ok && index) (written["structured-data"] ??= []).push(index);
       else result.manualSteps.push("Add the schema.org JSON-LD from the run page to the <head> of your home page.");
     }
   }
+
+  if (want("markdown")) await writeMarkdown(result, reader, fw, plan, url, (c) => add("markdown", c), (p) => (written.markdown ??= []).push(p));
+
+  if (want("labels") && plan.labels?.length) {
+    for (const file of [...new Set(plan.labels.map((l) => l.file))]) {
+      const ok = await editFile(result, reader, file, "labels for agents", (t) => applyLabels(file, t, plan.labels!));
+      if (ok) (written.labels ??= []).push(file);
+    }
+  }
+
+  // The SDK is written with the tools (codegen.ts); record its files under this fix.
+  if (opts.kinds.includes("sdk") && result.sdkFiles?.length) written.sdk = result.sdkFiles;
   result.siteFiles = written;
+}
+
+/** Insert `block` (whole lines) just before </head>; null if there's no </head>. */
+function beforeHeadEnd(t: string, block: string): string | null {
+  const at = t.search(/<\/head>/i);
+  if (at === -1) return null;
+  const lineStart = t.lastIndexOf("\n", at) + 1;
+  return `${t.slice(0, lineStart)}${block}${t.slice(lineStart)}`;
+}
+
+/**
+ * Render `<Name />` once on every page of a Next.js app: next to {children} in
+ * the root layout (App Router) or <Component /> in _app (Pages Router — ours
+ * if another step just created it, a new one if there is none). Returns the
+ * file it went into, or null (with a manual step) when there's no safe place.
+ */
+async function mountInNextRoot(result: CodegenResult, reader: RepoReader, fw: Framework, compPath: string, name: string, what: string): Promise<string | null> {
+  const tsx = fw.typescript ? "tsx" : "jsx";
+  const element = `<${name} />`;
+  const importFrom = (file: string) => `import { ${name} } from "${relImport(file, compPath)}";`;
+  const host =
+    fw.kind === "next-app" && fw.appDir
+      ? [".tsx", ".jsx", ".js"].map((e) => `${fw.appDir}/layout${e}`).find((p) => reader.has(p)) ?? null
+      : [".tsx", ".jsx", ".js"].map((e) => `${fw.pagesDir}/_app${e}`).find((p) => reader.has(p) || result.changes.some((c) => c.path === p)) ?? null;
+  if (host) {
+    const current = result.changes.find((c) => c.path === host)?.content ?? (await reader.read(host)) ?? "";
+    if (current.includes(`<${name}`)) return host; // mounted by an earlier run
+    const ok = await editFile(result, reader, host, what, (t) => mountNextTo(host, t, importFrom(host), element, fw.kind === "next-app" ? "children" : "Component"));
+    if (ok) return host;
+  } else if (fw.kind === "next-pages" && fw.pagesDir) {
+    const path = `${fw.pagesDir}/_app.${tsx}`;
+    result.changes.push({
+      path,
+      before: null,
+      reason: `Custom App to add the ${what}`,
+      content: `${fw.typescript ? `import type { AppProps } from "next/app";\n` : ""}${importFrom(path)}
+
+export default function App({ Component, pageProps }${fw.typescript ? ": AppProps" : ""}) {
+  return (
+    <>
+      <Component {...pageProps} />
+      ${element}
+    </>
+  );
+}
+`
+    });
+    return path;
+  }
+  result.manualSteps.push(`Render \`${element}\` from \`${compPath}\` once in your root layout (we couldn't find a safe place to add it).`);
+  return null;
+}
+
+/** The Markdown version: .md files for plain HTML, a converting route for Next.js, /index.md elsewhere. */
+async function writeMarkdown(
+  result: CodegenResult,
+  reader: RepoReader,
+  fw: Framework,
+  plan: SitePlan,
+  url: string | null,
+  add: (c: FileChange) => void,
+  touched: (path: string) => void
+): Promise<void> {
+  const dir = moduleDir(reader, fw);
+  const ext = fw.typescript ? "ts" : "js";
+  const tsx = fw.typescript ? "tsx" : "jsx";
+  const link = (href: string) => `    <link rel="alternate" type="text/markdown" href="${href}">\n`;
+
+  if (fw.kind === "static-html") {
+    const pages = plan.fixes.find((f) => f.kind === "markdown")?.files.filter((f) => /\.html?$/i.test(f)) ?? [];
+    for (const file of pages) {
+      const html = await reader.read(file);
+      if (html === null) continue;
+      const md = file.replace(/\.html?$/i, ".md");
+      const route = `/${file.slice(fw.root ? fw.root.length + 1 : 0)}`.replace(/(^|\/)index\.html?$/i, "$1");
+      add({ path: md, content: htmlToMarkdown(html, url ? `${url}${route}` : ""), before: null, reason: "Markdown version of the page for AI agents" });
+      const href = md.split("/").pop()!;
+      const ok = await editFile(result, reader, file, "links its Markdown version", (t) => (/type=["']text\/markdown["']/.test(t) ? null : beforeHeadEnd(t, link(href))));
+      if (ok) touched(file);
+    }
+    return;
+  }
+  if (fw.kind === "next-app" || fw.kind === "next-pages") {
+    const runtime = `${dir}/markdown.${ext}`;
+    const route = fw.kind === "next-app" ? `${fw.appDir}/md/[[...path]]/route.${ext}` : `${fw.pagesDir}/api/md/[[...path]].${ext}`;
+    const linkPath = `${dir}/AgentronicsMarkdownLink.${tsx}`;
+    add({ path: runtime, content: fw.typescript ? MARKDOWN_RUNTIME : toJs(MARKDOWN_RUNTIME, "markdown.ts"), before: null, reason: "HTML → Markdown for AI agents" });
+    const routeSrc = fw.kind === "next-app" ? nextAppMarkdownRoute(relImport(route, runtime)) : nextPagesMarkdownRoute(relImport(route, runtime), fw.typescript);
+    add({ path: route, content: fw.typescript || fw.kind === "next-pages" ? routeSrc : toJs(routeSrc, "route.ts"), before: null, reason: "Serves each page as Markdown" });
+    add({ path: linkPath, content: markdownLinkComponent(fw.kind, fw.typescript), before: null, reason: "Links each page's Markdown version" });
+    const host = await mountInNextRoot(result, reader, fw, linkPath, "AgentronicsMarkdownLink", "Markdown link");
+    if (host) touched(host);
+    return;
+  }
+  const index = spaIndexHtml(reader, fw);
+  if (!index || !plan.llms) return;
+  add({ path: join(publicDir(fw), "index.md"), content: renderLlms(plan.llms, url), before: null, reason: "Markdown version of the home page for AI agents" });
+  const ok = await editFile(result, reader, index, "links the Markdown version", (t) => beforeHeadEnd(t, link("/index.md")));
+  if (ok) touched(index);
 }

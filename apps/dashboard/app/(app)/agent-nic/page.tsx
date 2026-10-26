@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge, Card, CardTitle, Kpi, PageHeader, fmt } from "@/components/ui";
 import { statusBadgeProps } from "@/components/agent-nick/Pipeline";
 import { RepoPicker } from "@/components/agent-nick/RepoPicker";
+import { ConnectGitHubButton, GitHubConnectedSignal, RefreshOnGitHubReturn } from "@/components/agent-nick/GitHubConnect";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { agentNickConfigured, getInstallations, getSites, githubAppSlug, timeAgo } from "@/lib/agentNick";
 import { getPlanUsage, getWorkspacePlan } from "@/lib/billing";
@@ -49,6 +50,8 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
         action={active ? <LiveRefresh intervalMs={4000} /> : undefined}
       />
 
+      <RefreshOnGitHubReturn />
+      {sp.connected && <GitHubConnectedSignal />}
       {sp.connected && (
         <Card style={{ marginBottom: 18, borderColor: "var(--success)", background: "var(--success-bg)" }}>
           GitHub connected. Pick a repository below to start.
@@ -97,9 +100,7 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
             ))}
           </div>
           {configured ? (
-            <a className="ag-btn ag-btn-primary" href="/agent-nic/github/install">
-              Connect GitHub
-            </a>
+            <ConnectGitHubButton href="/agent-nic/github/install" />
           ) : (
             <p className="ag-muted" style={{ margin: 0 }}>{ERRORS.not_configured}</p>
           )}

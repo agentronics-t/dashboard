@@ -64,6 +64,12 @@ export function Pipeline({ run, events }: { run: Run; events: RunEvent[] }) {
               </div>
             </div>
             {st.detail && <div className="ag-node-detail">{st.detail}</div>}
+            {s.id === "live" && run.status === "pr_open" && run.prUrl && (
+              // Opens the PR at GitHub's merge box; merging there is what makes it live.
+              <a className="ag-btn ag-btn-sm ag-btn-primary" href={`${run.prUrl}#partial-pull-merging`} target="_blank" rel="noreferrer" style={{ marginTop: 8, alignSelf: "flex-start" }}>
+                Merge on GitHub ↗
+              </a>
+            )}
             <span className="sr-only" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
               {st.state}
             </span>

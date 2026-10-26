@@ -57,7 +57,7 @@ export async function rerunSite(siteId: string): Promise<ActionResult<{ runId: s
   return guard((tenantId) => startRun(siteId, tenantId));
 }
 
-export type SiteFixKind = "llms-txt" | "sitemap" | "structured-data";
+export type SiteFixKind = "robots-ai" | "llms-txt" | "sitemap" | "structured-data" | "markdown" | "labels" | "sdk";
 
 export async function submitReview(
   runId: string,
