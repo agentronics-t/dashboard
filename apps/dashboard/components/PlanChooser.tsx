@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { choosePlan, openBillingPortal } from "@/app/(app)/account/billing-actions";
+import { cancelPlanChange, choosePlan, openBillingPortal } from "@/app/(app)/account/billing-actions";
 
 export interface PlanCard {
   id: string;
@@ -18,6 +18,9 @@ export interface PlanCard {
 const SALES_URL = "https://www.agentronics.dev/book";
 type Interval = "month" | "year";
 
+const day = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "your next billing date";
+
 /**
  * Plan cards with upgrade buttons and a Monthly / Yearly switch (yearly is 21%
  * off). The current plan and interval are marked; Enterprise goes to sales.
@@ -29,7 +32,10 @@ export function PlanChooser({
   next,
   billingReady,
   yearlyReady = false,
-  compact = false
+  compact = false,
+  paid = false,
+  renewsOn = null,
+  scheduled = null
 }: {
   plans: PlanCard[];
   current: string;
@@ -38,15 +44,27 @@ export function PlanChooser({
   billingReady: boolean;
   yearlyReady?: boolean;
   compact?: boolean;
+  /** The workspace has an active paid subscription: switches happen at renewal. */
+  paid?: boolean;
+  /** ISO date of the next billing date. */
+  renewsOn?: string | null;
+  /** A switch already scheduled for the next billing date. */
+  scheduled?: { plan: string; interval: Interval; at: string } | null;
 }) {
   const router = useRouter();
   const [interval, setBillingInterval] = useState<Interval>(yearlyReady ? currentInterval : "month");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
   const [, start] = useTransition();
   const rank = (id: string) => plans.findIndex((p) => p.id === id);
+  const currentName = plans.find((p) => p.id === current)?.name ?? current;
 
-  const pick = (id: string) => {
+  // On a paid plan a switch is scheduled for renewal, so ask first; from Free it opens checkout.
+  const pick = (id: string) => (paid ? setConfirm(id) : go(id));
+
+  const go = (id: string) => {
+    setConfirm(null);
     setBusy(id);
     setError(null);
     start(async () => {
@@ -81,6 +99,7 @@ export function PlanChooser({
           const yearly = interval === "year" && p.priceYearly !== null && p.priceYearly > 0;
           const perMonth = yearly ? Math.round(((p.priceYearly as number) / 12) * 100) / 100 : p.price;
           const action = p.id === current ? (interval === "year" ? "Switch to yearly" : "Switch to monthly") : higher ? `Upgrade to ${p.name}` : `Switch to ${p.name}`;
+          const isScheduled = scheduled?.plan === p.id && scheduled.interval === interval;
           return (
             <div key={p.id} className="ag-plan" data-selected={isCurrent} style={{ cursor: "default", display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
@@ -118,7 +137,26 @@ export function PlanChooser({
                   <a className="ag-btn ag-btn-sm" href={SALES_URL} target="_blank" rel="noreferrer">
                     Contact sales
                   </a>
-                ) : p.price === 0 ? null : (
+                ) : p.price === 0 ? null : isScheduled ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>Starts {day(scheduled?.at)}</span>
+                    <button
+                      className="ag-btn ag-btn-sm"
+                      disabled={busy !== null}
+                      onClick={() => {
+                        setBusy(p.id);
+                        start(async () => {
+                          const res = await cancelPlanChange();
+                          if (!res.ok) setError(res.error);
+                          setBusy(null);
+                          router.refresh();
+                        });
+                      }}
+                    >
+                      {busy === p.id ? "Cancelling…" : "Cancel switch"}
+                    </button>
+                  </span>
+                ) : (
                   <button className={`ag-btn ag-btn-sm${higher ? " ag-btn-primary" : ""}`} disabled={!billingReady || busy !== null} onClick={() => pick(p.id)}>
                     {busy === p.id ? "Opening…" : action}
                   </button>
@@ -128,6 +166,34 @@ export function PlanChooser({
           );
         })}
       </div>
+      {confirm && (
+        <div role="dialog" aria-label="Confirm plan switch" style={{ marginTop: 14, border: "1px solid var(--border-strong)", borderRadius: "var(--radius-lg)", padding: 14, background: "var(--surface)" }}>
+          {(() => {
+            const target = plans.find((p) => p.id === confirm);
+            const price = interval === "year" ? `$${target?.priceYearly}/year` : `$${target?.price}/month`;
+            return (
+              <>
+                <div style={{ fontWeight: 700 }}>
+                  Switch to {target?.name}
+                  {interval === "year" ? ", billed yearly" : ""}?
+                </div>
+                <p style={{ margin: "6px 0 12px", fontSize: 13.5 }}>
+                  You stay on {currentName} until {day(renewsOn)}. From then you&apos;re on {target?.name} at {price}, charged through Dodo to the card on
+                  your subscription. If that payment doesn&apos;t go through, you stay on {currentName}. Nothing is charged today.
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="ag-btn ag-btn-sm ag-btn-primary" disabled={busy !== null} onClick={() => go(confirm)}>
+                    Switch on {day(renewsOn)}
+                  </button>
+                  <button className="ag-btn ag-btn-sm" onClick={() => setConfirm(null)}>
+                    Not now
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
       {!billingReady && <p className="ag-muted" style={{ fontSize: 12.5, margin: "10px 0 0" }}>Payments aren&apos;t set up on this console yet.</p>}
       {error && <p style={{ color: "var(--danger)", fontSize: 13, margin: "10px 0 0" }}>{error}</p>}
     </div>

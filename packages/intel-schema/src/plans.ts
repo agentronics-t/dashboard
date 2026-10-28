@@ -25,6 +25,8 @@ export interface PlanSpec {
   limits: {
     /** null = unlimited (or set per contract). */
     agentNickSites: number | null;
+    /** Websites whose Agent Readiness Score the Agent Nic page tracks (before → after). */
+    scoredWebsites: number | null;
     agentNickRunsPerMonth: number | null;
     agentNickToolsPerSite: number | null;
     agentNickStrategies: ToolStrategy[];
@@ -68,6 +70,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     tagline: "See your site through an agent's eyes.",
     limits: {
       agentNickSites: 1,
+      scoredWebsites: 1,
       agentNickRunsPerMonth: 1,
       agentNickToolsPerSite: 5,
       agentNickStrategies: ["form"],
@@ -102,6 +105,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     tagline: "Make your site agent-ready.",
     limits: {
       agentNickSites: 1,
+      scoredWebsites: 3,
       agentNickRunsPerMonth: 5,
       agentNickToolsPerSite: 15,
       agentNickStrategies: ["form", "dom", "fetch"],
@@ -136,6 +140,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     tagline: "Govern every agent across your sites.",
     limits: {
       agentNickSites: 3,
+      scoredWebsites: 10,
       agentNickRunsPerMonth: 30,
       agentNickToolsPerSite: null,
       agentNickStrategies: ["form", "dom", "fetch", "server_action"],
@@ -170,6 +175,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
     tagline: "Custom limits, SSO and an SLA.",
     limits: {
       agentNickSites: null,
+      scoredWebsites: null,
       agentNickRunsPerMonth: null,
       agentNickToolsPerSite: null,
       agentNickStrategies: ["form", "dom", "fetch", "server_action"],

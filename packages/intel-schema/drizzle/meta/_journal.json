@@ -71,6 +71,13 @@
       "when": 1793030009746,
       "tag": "0009_site_scans",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793162259339,
+      "tag": "0010_tracked_sites",
+      "breakpoints": true
     }
   ]
 }

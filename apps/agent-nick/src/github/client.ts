@@ -251,6 +251,23 @@ export class GitHub {
     }>("GET", `/repos/${fullName}/commits/${ref}/check-runs?per_page=100`);
   }
 
+  /**
+   * Commit statuses (the older API that Vercel, Netlify and many CI services
+   * report deploys and builds with). Needs the app's "Commit statuses: read"
+   * permission; without it this returns an empty list.
+   */
+  async commitStatuses(fullName: string, ref: string): Promise<{ context: string; state: string; description: string | null; target_url: string | null }[]> {
+    try {
+      const out = await this.request<{ statuses: { context: string; state: string; description: string | null; target_url: string | null }[] }>(
+        "GET",
+        `/repos/${fullName}/commits/${ref}/status?per_page=100`
+      );
+      return out.statuses ?? [];
+    } catch {
+      return [];
+    }
+  }
+
   async checkRunAnnotations(fullName: string, id: number) {
     return this.request<{ path: string; start_line: number; message: string; annotation_level: string }[]>(
       "GET",

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { rescanSite, saveSiteUrl } from "@/app/(app)/agent-nic/actions";
+import { removeTrackedSite, rescanSite, saveSiteUrl, testSdk } from "@/app/(app)/agent-nic/actions";
 import type { ScanCheck, ScanResult } from "@/lib/siteScore";
 
 // The site's Agent Readiness Score at the top of Agent Nic: one line with the
@@ -83,8 +83,8 @@ function Breakdown({ result }: { result: ScanResult }) {
   );
 }
 
-/** No address yet: ask for it and score it right away. */
-export function SiteUrlForm({ initial = "" }: { initial?: string }) {
+/** Add a website: score it right away. */
+export function SiteUrlForm({ initial = "", first = true, onDone }: { initial?: string; first?: boolean; onDone?: () => void }) {
   const router = useRouter();
   const [url, setUrl] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -97,20 +97,24 @@ export function SiteUrlForm({ initial = "" }: { initial?: string }) {
           setError(null);
           const res = await saveSiteUrl(url);
           if (!res.ok) return setError(res.error);
+          setUrl("");
+          onDone?.();
           router.refresh();
         });
       }}
       style={{ display: "grid", gap: 8 }}
     >
-      <label htmlFor="ag-site-url" style={{ fontWeight: 700 }}>
-        What&apos;s your website?
+      <label htmlFor={first ? "ag-site-url" : "ag-site-url-more"} style={{ fontWeight: 700 }}>
+        {first ? "What's your website?" : "Add another website"}
       </label>
-      <span className="ag-muted" style={{ fontSize: 13, marginTop: -4 }}>
-        We score it now, Agent Nic uses it in every run, and we score it again once Agent Nic&apos;s changes are live.
-      </span>
+      {first && (
+        <span className="ag-muted" style={{ fontSize: 13, marginTop: -4 }}>
+          We score it now, Agent Nic uses it in every run, and we score it again once Agent Nic&apos;s changes are live.
+        </span>
+      )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
-          id="ag-site-url"
+          id={first ? "ag-site-url" : "ag-site-url-more"}
           className="ag-input"
           type="text"
           inputMode="url"
@@ -135,12 +139,14 @@ export function SiteUrlForm({ initial = "" }: { initial?: string }) {
 }
 
 export function SiteScore({
+  id,
   url,
   before,
   after,
   waiting,
   latest
 }: {
+  id: string;
   url: string;
   before: ScorePoint | null;
   after: ScorePoint | null;
@@ -150,30 +156,41 @@ export function SiteScore({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
   const [pending, start] = useTransition();
   const host = url.replace(/^https?:\/\//, "");
   const gain = before && after ? after.score - before.score : null;
-
-  if (editing) return <SiteUrlForm initial={host} />;
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 700 }}>Agent Readiness Score</div>
+          <a className="ag-link" href={url} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>
+            {host}
+          </a>
           <div className="ag-muted" style={{ fontSize: 12.5 }}>
-            <a className="ag-link" href={url} target="_blank" rel="noreferrer">
-              {host}
-            </a>{" "}
-            ·{" "}
-            <button type="button" className="ag-link" onClick={() => setEditing(true)} style={{ background: "none", border: 0, padding: 0, font: "inherit", cursor: "pointer" }}>
-              change
+            Agent Readiness Score ·{" "}
+            <button
+              type="button"
+              className="ag-link"
+              disabled={pending}
+              onClick={() => {
+                if (!window.confirm(`Stop tracking ${host}? Its past scores are kept.`)) return;
+                start(async () => {
+                  const res = await removeTrackedSite(id);
+                  if (!res.ok) setError(res.error);
+                  router.refresh();
+                });
+              }}
+              style={{ background: "none", border: 0, padding: 0, font: "inherit", cursor: "pointer" }}
+            >
+              remove
             </button>
           </div>
         </div>
-        {before ? <Score label={after ? "Before" : "Now"} point={before} /> : <span className="ag-muted">Scanning…</span>}
+        {before ? <Score label={after ? "Before" : "Now"} point={before} /> : <span className="ag-muted">Not scored yet</span>}
         {after && (
           <>
             <span aria-hidden className="ag-muted" style={{ fontSize: 18 }}>
@@ -199,13 +216,33 @@ export function SiteScore({
             onClick={() =>
               start(async () => {
                 setError(null);
-                const res = await rescanSite();
+                const res = await rescanSite(id);
                 if (!res.ok) setError(res.error);
                 router.refresh();
               })
             }
           >
-            {pending ? "Scanning…" : "Scan again"}
+            {pending && !testing ? "Scanning…" : "Scan again"}
+          </button>
+          <button
+            type="button"
+            className="ag-btn ag-btn-sm"
+            disabled={pending}
+            title="Check the Agentronics SDK is on this site and send test events to every console page"
+            onClick={() => {
+              setTesting(true);
+              start(async () => {
+                setError(null);
+                setNote(null);
+                const res = await testSdk(id);
+                if (res.ok) setNote(res.message);
+                else setError(res.error);
+                setTesting(false);
+                router.refresh();
+              });
+            }}
+          >
+            {testing ? "Testing…" : "Send test events"}
           </button>
           {latest && (
             <button
@@ -228,6 +265,11 @@ export function SiteScore({
           {error}
         </div>
       )}
+      {note && (
+        <div role="status" style={{ color: "var(--success)", fontSize: 13, marginTop: 8 }}>
+          {note}
+        </div>
+      )}
       {open && latest && (
         <>
           <div className="ag-muted" style={{ fontSize: 12.5, marginTop: 12 }}>
@@ -235,6 +277,37 @@ export function SiteScore({
           </div>
           <Breakdown result={latest} />
         </>
+      )}
+    </div>
+  );
+}
+
+/** Under the list: add another website, or say the plan is full. */
+export function AddWebsite({ canAdd, note }: { canAdd: boolean; note: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+      {open ? (
+        <SiteUrlForm first={false} onDone={() => setOpen(false)} />
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {canAdd && (
+            <button type="button" className="ag-btn ag-btn-sm" onClick={() => setOpen(true)}>
+              + Add website
+            </button>
+          )}
+          <span className="ag-muted" style={{ fontSize: 12.5 }}>
+            {note}
+            {!canAdd && (
+              <>
+                {" · "}
+                <a className="ag-link" href="/account">
+                  upgrade for more
+                </a>
+              </>
+            )}
+          </span>
+        </div>
       )}
     </div>
   );

@@ -4,9 +4,10 @@ import { statusBadgeProps } from "@/components/agent-nick/Pipeline";
 import { RepoPicker } from "@/components/agent-nick/RepoPicker";
 import { ConnectGitHubButton, GitHubConnectedSignal, RefreshOnGitHubReturn } from "@/components/agent-nick/GitHubConnect";
 import { LiveRefresh } from "@/components/LiveRefresh";
-import { SiteScore, SiteUrlForm, type ScorePoint } from "@/components/agent-nick/SiteScore";
+import { AddWebsite, SiteScore, SiteUrlForm, type ScorePoint } from "@/components/agent-nick/SiteScore";
 import { after } from "next/server";
-import { afterScanDue, getScoreCard, recordScan, type StoredScan } from "@/lib/siteScore";
+import { afterScanDue, getScoreCards, recordScan, type StoredScan } from "@/lib/siteScore";
+import { runSdkTest, sentTestEvents } from "@/lib/sdkTest";
 import { agentNickConfigured, getInstallations, getSites, githubAppSlug, timeAgo } from "@/lib/agentNick";
 import { getPlanUsage, getWorkspacePlan } from "@/lib/billing";
 import { limitLabel } from "@agentronics/intel-schema";
@@ -27,18 +28,26 @@ const ERRORS: Record<string, string> = {
 export default async function AgentNickPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const tenantId = await getTenantId();
-  const [installs, sites, { spec: plan }, usage, score] = await Promise.all([
+  const [installs, sites, { spec: plan }, usage, scores] = await Promise.all([
     getInstallations(tenantId),
     getSites(tenantId),
     getWorkspacePlan(tenantId),
     getPlanUsage(tenantId),
-    getScoreCard(tenantId)
+    getScoreCards(tenantId)
   ]);
   // Agent Nic's PR is merged: score the site again once it has redeployed (retried while it shows no gain).
-  if (score && afterScanDue(score)) {
-    const { url, pendingAfter } = score;
-    after(() => recordScan(tenantId, url, "after", pendingAfter!.runId));
+  for (const card of scores) {
+    if (!afterScanDue(card)) continue;
+    const { site, pendingAfter } = card;
+    after(async () => {
+      await recordScan(tenantId, site.url, "after", pendingAfter!.runId);
+      // Once the SDK is live on the redeployed site, send its test events (once per site).
+      if (!(await sentTestEvents(tenantId, new URL(site.url).hostname))) await runSdkTest(tenantId, site.url, site.agentNickSiteId, { requireLive: true });
+    });
   }
+  const waitingForRedeploy = scores.some((c) => c.pendingAfter);
+  const websiteLimit = plan.limits.scoredWebsites;
+  const canAddWebsite = websiteLimit === null || scores.length < websiteLimit;
   const point = (s: StoredScan | null): ScorePoint | null => s && { score: s.score, band: s.result.band.key, at: s.createdAt.toISOString() };
   const runsLeft = plan.limits.agentNickRunsPerMonth === null ? null : Math.max(0, plan.limits.agentNickRunsPerMonth - usage.runs);
   const configured = agentNickConfigured() && !!githubAppSlug();
@@ -62,18 +71,29 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
       <PageHeader
         title="Agent Nic"
         subtitle="Our agents write WebMCP tools, a sitemap, llms.txt and structured data into your own code and open a pull request. You review, you merge."
-        action={active ? <LiveRefresh intervalMs={4000} /> : score?.pendingAfter ? <LiveRefresh intervalMs={30_000} /> : undefined}
+        action={active ? <LiveRefresh intervalMs={4000} /> : waitingForRedeploy ? <LiveRefresh intervalMs={30_000} /> : undefined}
       />
 
       <Card style={{ marginBottom: 18 }}>
-        {score ? (
-          <SiteScore
-            url={score.url}
-            before={point(score.before)}
-            after={point(score.after)}
-            waiting={!!score.pendingAfter}
-            latest={(score.after ?? score.before)?.result ?? null}
-          />
+        {scores.length ? (
+          <div style={{ display: "grid", gap: 16 }}>
+            {scores.map((c, i) => (
+              <div key={c.site.id} style={i ? { borderTop: "1px solid var(--border)", paddingTop: 16 } : undefined}>
+                <SiteScore
+                  id={c.site.id}
+                  url={c.site.url}
+                  before={point(c.before)}
+                  after={point(c.after)}
+                  waiting={!!c.pendingAfter}
+                  latest={(c.after ?? c.before)?.result ?? null}
+                />
+              </div>
+            ))}
+            <AddWebsite
+              canAdd={canAddWebsite}
+              note={`${scores.length} of ${limitLabel(websiteLimit)} website${websiteLimit === 1 ? "" : "s"} on ${plan.name}`}
+            />
+          </div>
         ) : (
           <SiteUrlForm />
         )}

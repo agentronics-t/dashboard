@@ -4,12 +4,10 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { isBillingInterval, isPaidPlanId, type BillingInterval } from "@agentronics/intel-schema";
 import { schema } from "@agentronics/intel-schema/db";
-import { eq } from "drizzle-orm";
-import { dodo, getWorkspacePlan, planProductId } from "@/lib/billing";
+import { dodo, getScheduledPlan, getWorkspacePlan, planProductId } from "@/lib/billing";
 import { db, getTenantId, requireWorkspaceAdmin } from "@/lib/tenant";
-import { syncSeats } from "@/lib/seats";
 
-export type BillingResult = { ok: true; url?: string } | { ok: false; error: string };
+export type BillingResult = { ok: true; url?: string; scheduledFor?: string } | { ok: false; error: string };
 
 async function origin() {
   const h = await headers();
@@ -21,8 +19,11 @@ const safeNext = (next: string | null | undefined) => (next && next.startsWith("
 
 /**
  * Move the workspace to a paid plan, billed monthly or yearly. New subscribers
- * go through Dodo checkout; an existing subscription is switched in place
- * (prorated), including monthly ↔ yearly.
+ * pay in Dodo checkout. An existing subscription switches on its next billing
+ * date: the workspace keeps its current plan until then, Dodo charges the new
+ * price at that renewal, and the switch only happens if that payment succeeds
+ * (on_payment_failure: prevent_change). The plan here changes when Dodo's
+ * webhook reports it, never before.
  */
 export async function choosePlan(plan: string, interval: string = "month", next?: string): Promise<BillingResult> {
   try {
@@ -37,12 +38,24 @@ export async function choosePlan(plan: string, interval: string = "month", next?
 
     if (row?.dodoSubscriptionId && spec.id !== "free") {
       if (spec.id === plan && row.billingInterval === billing) return { ok: false, error: `You're already on ${spec.name}${billing === "year" ? ", billed yearly" : ""}.` };
-      await client.subscriptions.changePlan(row.dodoSubscriptionId, { product_id: productId, quantity: 1, proration_billing_mode: "prorated_immediately" });
-      // The subscription.plan_changed webhook confirms it; reflect it now so limits update immediately.
-      await db().update(schema.workspacePlans).set({ plan, billingInterval: billing, updatedAt: new Date() }).where(eq(schema.workspacePlans.tenantId, tenantId));
-      await syncSeats(tenantId, plan);
-      revalidatePath("/", "layout");
-      return { ok: true };
+      try {
+        await client.subscriptions.changePlan(row.dodoSubscriptionId, {
+          product_id: productId,
+          quantity: 1,
+          proration_billing_mode: "full_immediately",
+          effective_at: "next_billing_date",
+          on_payment_failure: "prevent_change",
+          // Picking another plan replaces a switch that's already scheduled.
+          cancel_scheduled_change_plan: true
+        });
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 409) return { ok: false, error: "A payment on your subscription is still being processed. Try again once it clears, or check Invoices & payment method." };
+        throw err;
+      }
+      revalidatePath("/account");
+      const scheduled = await getScheduledPlan(row.dodoSubscriptionId);
+      return { ok: true, scheduledFor: scheduled?.at ?? row.currentPeriodEnd?.toISOString() };
     }
 
     const base = await origin();
@@ -62,6 +75,21 @@ export async function choosePlan(plan: string, interval: string = "month", next?
     return { ok: true, url: session.checkout_url };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Couldn't change the plan." };
+  }
+}
+
+/** Drop a plan switch that's waiting for the next billing date. */
+export async function cancelPlanChange(): Promise<BillingResult> {
+  try {
+    await requireWorkspaceAdmin();
+    const client = dodo();
+    const { row } = await getWorkspacePlan(await getTenantId());
+    if (!client || !row?.dodoSubscriptionId) return { ok: false, error: "No subscription to change." };
+    await client.subscriptions.cancelChangePlan(row.dodoSubscriptionId);
+    revalidatePath("/account");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't cancel the switch." };
   }
 }
 

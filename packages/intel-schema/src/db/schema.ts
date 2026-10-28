@@ -776,3 +776,21 @@ export const siteScans = pgTable(
   },
   (t) => [index("site_scans_tenant_created_idx").on(t.tenantId, t.createdAt)]
 );
+
+// The websites a workspace tracks on the Agent Nic page (how many depends on
+// the plan: scoredWebsites). Each can be tied to the Agent Nic site (repo) that
+// builds it, so a run scores the right site before and after. Replaces the
+// single tenants.site_url.
+export const trackedSites = pgTable(
+  "tracked_sites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    agentNickSiteId: uuid("agent_nick_site_id").references(() => agentNickSites.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [uniqueIndex("tracked_sites_tenant_url_uq").on(t.tenantId, t.url), index("tracked_sites_repo_idx").on(t.agentNickSiteId)]
+);

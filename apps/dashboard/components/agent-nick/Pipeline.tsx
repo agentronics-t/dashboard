@@ -1,30 +1,25 @@
-// The Agent Nic pipeline drawn from the run's event log: one node per step,
-// coloured by state, with the step's latest message underneath.
+// The Agent Nic pipeline drawn from the run's event log: six steps, each a box
+// with its name, coloured by state. The run log underneath has the details.
 import type { Run, RunEvent } from "@/lib/agentNick";
 
 type State = "pending" | "running" | "waiting" | "done" | "failed";
 
-export const STEPS: { id: string; label: string; who: string }[] = [
-  { id: "connect", label: "Connect repo", who: "You" },
-  { id: "read", label: "Read the code", who: "GitHub API · no clone" },
-  { id: "framework", label: "Framework", who: "Code" },
-  { id: "pages", label: "Find pages", who: "Code" },
-  { id: "actions", label: "Find actions", who: "Code" },
-  { id: "site", label: "Site files", who: "Code + Gemini" },
-  { id: "propose", label: "Propose tools", who: "Gemini 3.8 Flash" },
-  { id: "review", label: "Your review", who: "You · tools, access, plan" },
-  { id: "write", label: "Write code", who: "Templates + Gemini" },
-  { id: "validate", label: "Validate", who: "Code" },
-  { id: "pr", label: "Pull request", who: "GitHub" },
-  { id: "ci", label: "CI checks", who: "Your CI" },
-  { id: "live", label: "Live", who: "You merge" }
+/** What the customer sees: six steps, each covering one or more of the service's steps. */
+export const STEPS: { id: string; label: string; parts: string[] }[] = [
+  { id: "read", label: "Read your code", parts: ["read", "framework", "pages", "actions"] },
+  { id: "plan", label: "Plan the fixes", parts: ["site", "propose"] },
+  { id: "review", label: "Your review", parts: ["review"] },
+  { id: "write", label: "Write the code", parts: ["write", "validate"] },
+  { id: "pr", label: "Pull request", parts: ["pr", "ci"] },
+  { id: "live", label: "Live", parts: ["live"] }
 ];
 
 const KIND_STATE: Record<string, State> = { start: "running", done: "done", fail: "failed", wait: "waiting" };
 const GLYPH: Record<State, string> = { pending: "", running: "•", waiting: "!", done: "✓", failed: "✕" };
 
+/** The state of each of the service's steps (read, framework, … ci, live). */
 export function stepStates(run: Run, events: RunEvent[]): Record<string, { state: State; detail: string | null }> {
-  const out: Record<string, { state: State; detail: string | null }> = { connect: { state: "done", detail: "Repository linked" } };
+  const out: Record<string, { state: State; detail: string | null }> = {};
   for (const e of events) {
     const prev = out[e.step];
     const state = KIND_STATE[e.kind] ?? prev?.state ?? "running";
@@ -33,45 +28,52 @@ export function stepStates(run: Run, events: RunEvent[]): Record<string, { state
   // CI and live are driven by webhooks; reflect the run's own fields too.
   if (run.status === "pr_open" && !out.ci) out.ci = { state: "waiting", detail: "Waiting for your CI checks" };
   if (run.ciStatus === "success") out.ci = { state: "done", detail: out.ci?.detail ?? "Checks passed" };
+  if (run.ciStatus === "failure" && run.status === "pr_open") out.ci = { state: "failed", detail: out.ci?.detail ?? "A check failed" };
   if (run.ciStatus === "none" && run.status === "pr_open") out.ci = { state: "done", detail: "No CI checks on this repo" };
   if (run.status === "pr_open") out.live = { state: "waiting", detail: "Accept the pull request to go live" };
   if (run.status === "merged") out.live = { state: "done", detail: out.live?.detail ?? "Merged" };
   if (run.status === "ready") out.ci = { state: "pending", detail: "Dry run — nothing pushed" };
   // A step that "started" but the run has moved on (or ended) is no longer running.
   const finished = ["failed", "cancelled", "closed"].includes(run.status);
-  for (const s of STEPS) {
-    const cur = out[s.id];
-    if (cur?.state === "running" && (finished || s.id !== run.step)) out[s.id] = { ...cur, state: finished ? "failed" : "done" };
+  for (const [id, cur] of Object.entries(out)) {
+    if (cur.state === "running" && (finished || id !== run.step)) out[id] = { ...cur, state: finished ? "failed" : "done" };
   }
   return out;
+}
+
+/** One shown step's state from its parts: failed > waiting > running > done (all parts) > pending. */
+function groupState(parts: (State | undefined)[]): State {
+  if (parts.includes("failed")) return "failed";
+  if (parts.includes("waiting")) return "waiting";
+  if (parts.includes("running")) return "running";
+  if (parts.length && parts.every((p) => p === "done")) return "done";
+  return parts.some((p) => p === "done") ? "running" : "pending";
 }
 
 export function Pipeline({ run, events }: { run: Run; events: RunEvent[] }) {
   const states = stepStates(run, events);
   return (
-    <ol className="ag-flow" aria-label="Agent Nic pipeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+    <ol className="ag-flow ag-flow--compact" aria-label="Agent Nic pipeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
       {STEPS.map((s, i) => {
-        const st = states[s.id] ?? { state: "pending" as State, detail: null };
+        // The CI part only exists once a PR is open; don't let its absence hold "Pull request" back.
+        const parts = s.parts.filter((p) => p !== "ci" || states.ci).map((p) => states[p]?.state);
+        const state = groupState(parts);
         return (
-          <li key={s.id} className="ag-node" data-state={st.state} aria-current={st.state === "running" || st.state === "waiting" ? "step" : undefined}>
+          <li key={s.id} className="ag-node" data-state={state} aria-current={state === "running" || state === "waiting" ? "step" : undefined}>
             <div className="ag-node-head">
               <span className="ag-dot" aria-hidden>
-                {GLYPH[st.state] || i + 1}
+                {GLYPH[state] || i + 1}
               </span>
-              <div style={{ minWidth: 0 }}>
-                <div className="ag-node-label">{s.label}</div>
-                <div className="ag-node-who">{s.who}</div>
-              </div>
+              <div className="ag-node-label">{s.label}</div>
             </div>
-            {st.detail && <div className="ag-node-detail">{st.detail}</div>}
             {s.id === "live" && run.status === "pr_open" && run.prUrl && (
               // Opens the PR at GitHub's merge box; merging there is what makes it live.
-              <a className="ag-btn ag-btn-sm ag-btn-primary" href={`${run.prUrl}#partial-pull-merging`} target="_blank" rel="noreferrer" style={{ marginTop: 8, alignSelf: "flex-start" }}>
+              <a className="ag-btn ag-btn-sm ag-btn-primary" href={`${run.prUrl}#partial-pull-merging`} target="_blank" rel="noreferrer" style={{ marginTop: 10 }}>
                 Merge on GitHub ↗
               </a>
             )}
             <span className="sr-only" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
-              {st.state}
+              {state}
             </span>
           </li>
         );

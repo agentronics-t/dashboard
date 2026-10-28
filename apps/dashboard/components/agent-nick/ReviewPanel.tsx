@@ -160,8 +160,26 @@ export function ReviewPanel({
     .filter(Boolean)
     .join(" + ");
 
+  const approveButton = (
+    <button className="ag-btn ag-btn-primary" onClick={approve} disabled={pending || (approved === 0 && siteCount === 0) || overLimit}>
+      {pending ? "Working…" : `Approve ${label || "nothing"} & write the code`}
+    </button>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* The same button as at the end, so a long list doesn't have to be scrolled through. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 14px", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", background: "var(--surface-sunken, transparent)" }}>
+        <span style={{ fontSize: 13.5, flex: "1 1 220px" }}>
+          Everything is ticked with a sensible default. Approve now, or change anything below first.
+        </span>
+        {approveButton}
+        {error && (
+          <span role="alert" style={{ color: "var(--danger)", fontSize: 13, flexBasis: "100%" }}>
+            {error}
+          </span>
+        )}
+      </div>
       {siteFixes.length > 0 && (
         <section>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--content-muted)", marginBottom: 6 }}>
@@ -300,9 +318,7 @@ export function ReviewPanel({
       )}
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button className="ag-btn ag-btn-primary" onClick={approve} disabled={pending || (approved === 0 && siteCount === 0) || overLimit}>
-          {pending ? "Working…" : `Approve ${label || "nothing"} & write the code`}
-        </button>
+        {approveButton}
         <button className="ag-btn" onClick={cancel} disabled={pending}>
           Cancel run
         </button>

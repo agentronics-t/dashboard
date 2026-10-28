@@ -9,8 +9,27 @@ import { useRouter } from "next/navigation";
 export function LiveRefresh({ intervalMs = 15000 }: { intervalMs?: number }) {
   const router = useRouter();
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), intervalMs);
-    return () => clearInterval(id);
+    // A refresh still loading when the visitor clicks to another page can be
+    // drawn after that navigation (the old page's data under the new address).
+    // So skip a tick once the address has changed, or right after a click on a
+    // link, and while the tab is hidden.
+    const path = window.location.pathname;
+    let lastNav = 0;
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest?.("a[href]")) lastNav = Date.now();
+    };
+    const onPop = () => (lastNav = Date.now());
+    document.addEventListener("click", onClick, true);
+    window.addEventListener("popstate", onPop);
+    const id = setInterval(() => {
+      if (window.location.pathname !== path || Date.now() - lastNav < 5000 || document.visibilityState !== "visible") return;
+      router.refresh();
+    }, intervalMs);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener("popstate", onPop);
+    };
   }, [router, intervalMs]);
 
   return (
