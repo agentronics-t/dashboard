@@ -50,6 +50,7 @@ function moduleIssues(content: string): string[] {
   if (!/"modelContext" in document/.test(content)) issues.push("missing WebMCP feature detection");
   if (/navigator\.modelContext|unregisterTool\(|provideContext\(/.test(content)) issues.push("uses a removed WebMCP API");
   if (!/registerTool\(tool, \{ signal \}\)/.test(content)) issues.push("tools are not registered with an AbortSignal");
+  if (!/^\/\* eslint-disable \*\/\n\/\/ @ts-nocheck\n/.test(content)) issues.push("missing the generated-code header (eslint-disable + @ts-nocheck)");
   return issues;
 }
 

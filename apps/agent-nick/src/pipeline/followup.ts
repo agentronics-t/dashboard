@@ -163,22 +163,32 @@ export async function handleWebhook(deps: FollowupDeps, event: string, p: Record
     return "closed";
   }
 
-  if (event === "check_suite" && repo && p.action === "completed") {
-    const suite = p.check_suite as { head_sha: string };
-    const hit = await runByHead(db, repo, suite.head_sha);
+  // CI finished (check runs) or a commit status changed (Vercel / Netlify deploys report that way).
+  const ciSha =
+    event === "check_suite" && p.action === "completed"
+      ? (p.check_suite as { head_sha: string }).head_sha
+      : event === "status" && ["success", "failure", "error"].includes(String(p.state))
+        ? String(p.sha)
+        : null;
+  if (ciSha && repo) {
+    const hit = await runByHead(db, repo, ciSha);
     if (!hit || hit.run.status !== "pr_open") return "not ours";
     const gh = deps.github(hit.site.installationId);
-    const { check_runs } = await gh.checkRuns(repo.full_name, suite.head_sha);
+    const [{ check_runs }, statuses] = await Promise.all([gh.checkRuns(repo.full_name, ciSha), gh.commitStatuses(repo.full_name, ciSha)]);
     const ours = check_runs.filter((c) => !/agent.?nick/i.test(c.name));
-    const pending = ours.some((c) => c.status !== "completed");
-    const failedRuns = ours.filter((c) => c.status === "completed" && ["failure", "timed_out", "cancelled"].includes(c.conclusion ?? ""));
-    const status = failedRuns.length ? "failure" : pending ? "pending" : ours.length ? "success" : "none";
+    const checks = [
+      ...ours.map((c) => ({ name: c.name, state: c.status !== "completed" ? "pending" : ["failure", "timed_out", "cancelled"].includes(c.conclusion ?? "") ? "failure" : "success" })),
+      ...statuses.map((st) => ({ name: st.context, state: st.state === "pending" ? "pending" : st.state === "success" ? "success" : "failure" }))
+    ];
+    const failed = checks.filter((c) => c.state === "failure");
+    const pending = checks.some((c) => c.state === "pending");
+    const status = failed.length ? "failure" : pending ? "pending" : checks.length ? "success" : "none";
     if (status === hit.run.ciStatus && status !== "failure") return `ci ${status}`;
     const r = new RunReporter(db, hit.run.id);
     await r.update({ ciStatus: status });
-    if (status === "success") await r.done("ci", `All ${ours.length} checks passed`);
+    if (status === "success") await r.done("ci", `All ${checks.length} checks passed`);
     if (status === "failure") {
-      await r.info("ci", `${failedRuns.length} check${failedRuns.length === 1 ? "" : "s"} failed: ${failedRuns.map((c) => c.name).join(", ")}`);
+      await r.info("ci", `${failed.length} check${failed.length === 1 ? "" : "s"} failed: ${failed.map((c) => c.name).join(", ")}`);
       const plan = await tenantPlan(db, hit.run.tenantId);
       if (!plan.limits.agentNickAutoCiFix) {
         await r.info("ci", `Automatic CI fixes are included from the Starter plan — fix it on the PR, or upgrade.`);
@@ -214,9 +224,11 @@ export async function attemptCiFix(deps: FollowupDeps, runId: string): Promise<v
   const gh = deps.github(hit.site.installationId);
   const full = hit.site.repoFullName;
 
-  const { check_runs } = await gh.checkRuns(full, hit.run.headSha);
+  const [{ check_runs }, statuses] = await Promise.all([gh.checkRuns(full, hit.run.headSha), gh.commitStatuses(full, hit.run.headSha)]);
   const failed = check_runs.filter((c) => ["failure", "timed_out"].includes(c.conclusion ?? ""));
-  const errors: string[] = [];
+  const errors: string[] = statuses
+    .filter((st) => st.state === "failure" || st.state === "error")
+    .map((st) => `## ${st.context}\n${st.description ?? "failed"}${st.target_url ? ` (${st.target_url})` : ""}`);
   for (const c of failed.slice(0, 5)) {
     const notes = await gh.checkRunAnnotations(full, c.id).catch(() => []);
     errors.push(

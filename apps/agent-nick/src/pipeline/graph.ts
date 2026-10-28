@@ -183,7 +183,12 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
 
   const siteFiles = step("site", "Checking robots.txt, llms.txt, sitemap, structured data, Markdown, labels and the SDK", async (s, r, llm) => {
     const { reader, gh, site: row } = await repo(s);
-    const [tenant] = await db.select({ siteUrl: schema.tenants.siteUrl }).from(schema.tenants).where(eq(schema.tenants.id, s.tenantId));
+    // The website saved on the Agent Nic page for this repo (or the workspace's only one).
+    const tracked = await db
+      .select({ url: schema.trackedSites.url, repo: schema.trackedSites.agentNickSiteId })
+      .from(schema.trackedSites)
+      .where(eq(schema.trackedSites.tenantId, s.tenantId));
+    const workspaceUrl = tracked.find((t) => t.repo === s.siteId)?.url ?? (tracked.length === 1 && !tracked[0]!.repo ? tracked[0]!.url : null);
     const plan = await planSiteFiles({
       reader,
       fw: s.framework,
@@ -192,7 +197,7 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
       llm,
       repoFullName: row.repoFullName,
       githubHomepage: row.homepage,
-      workspaceUrl: tenant?.siteUrl ?? null,
+      workspaceUrl,
       deployUrl: () => gh.productionUrl(row.repoFullName)
     });
     if (!plan.fixes.length && !countActions(s.digests)) {
@@ -207,10 +212,10 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     return { site: plan };
   });
 
-  const propose = step("propose", "Proposing tools with Gemini", async (s, r, llm) => {
+  const propose = step("propose", "Proposing tools", async (s, r, llm) => {
     const row = await site(s);
     const tools = countActions(s.digests) ? await proposeTools(llm, row.repoFullName, s.digests) : [];
-    if (!tools.length && !s.site?.fixes.length) throw new Halt("Gemini found nothing worth exposing as a tool on this site.");
+    if (!tools.length && !s.site?.fixes.length) throw new Halt("Nothing on this site is worth exposing as a tool.");
     const inserted = !tools.length
       ? []
       : await db

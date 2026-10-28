@@ -7,7 +7,7 @@
 // for a while when it shows no gain yet.
 
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { schema } from "@agentronics/intel-schema/db";
 import { db } from "./tenant";
 
@@ -98,13 +98,54 @@ const toStored = (row: typeof schema.siteScans.$inferSelect): StoredScan => ({
   createdAt: row.createdAt
 });
 
-export async function getSiteUrl(tenantId: string): Promise<string | null> {
-  const [row] = await db().select({ siteUrl: schema.tenants.siteUrl }).from(schema.tenants).where(eq(schema.tenants.id, tenantId));
-  return row?.siteUrl ?? null;
+export interface TrackedSite {
+  id: string;
+  url: string;
+  /** The Agent Nic site (repo) that builds it, if linked. */
+  agentNickSiteId: string | null;
+}
+
+export async function getTrackedSites(tenantId: string): Promise<TrackedSite[]> {
+  return db()
+    .select({ id: schema.trackedSites.id, url: schema.trackedSites.url, agentNickSiteId: schema.trackedSites.agentNickSiteId })
+    .from(schema.trackedSites)
+    .where(eq(schema.trackedSites.tenantId, tenantId))
+    .orderBy(asc(schema.trackedSites.createdAt));
+}
+
+/**
+ * The website an Agent Nic repo builds: the tracked site linked to it, or —
+ * when the workspace tracks exactly one site that isn't linked yet — that one,
+ * which is then linked to the repo.
+ */
+export async function siteUrlForRepo(tenantId: string, agentNickSiteId: string): Promise<string | null> {
+  const sites = await getTrackedSites(tenantId);
+  const linked = sites.find((s) => s.agentNickSiteId === agentNickSiteId);
+  if (linked) return linked.url;
+  const free = sites.filter((s) => !s.agentNickSiteId);
+  if (sites.length === 1 && free.length === 1) {
+    await db().update(schema.trackedSites).set({ agentNickSiteId }).where(eq(schema.trackedSites.id, free[0]!.id));
+    return free[0]!.url;
+  }
+  return null;
+}
+
+/** Remember the address given in a review as the repo's website (within the plan's limit). */
+export async function linkSiteToRepo(tenantId: string, url: string, agentNickSiteId: string, limit: number | null): Promise<void> {
+  const sites = await getTrackedSites(tenantId);
+  for (const s of sites.filter((s) => s.agentNickSiteId === agentNickSiteId && s.url !== url)) {
+    await db().update(schema.trackedSites).set({ agentNickSiteId: null }).where(eq(schema.trackedSites.id, s.id));
+  }
+  const existing = sites.find((s) => s.url === url);
+  if (existing) {
+    await db().update(schema.trackedSites).set({ agentNickSiteId }).where(eq(schema.trackedSites.id, existing.id));
+  } else if (limit === null || sites.length < limit) {
+    await db().insert(schema.trackedSites).values({ tenantId, url, agentNickSiteId }).onConflictDoNothing();
+  }
 }
 
 export interface ScoreCard {
-  url: string;
+  site: TrackedSite;
   /** The baseline: the scan taken when the latest run started (or the first scan). */
   before: StoredScan | null;
   /** The newest scan after the baseline, if any. */
@@ -117,30 +158,41 @@ const AFTER_FIRST_DELAY_MS = 2 * 60_000; // give the site time to redeploy
 const AFTER_RETRY_MS = 3 * 60_000;
 const AFTER_GIVE_UP_MS = 45 * 60_000;
 
-export async function getScoreCard(tenantId: string): Promise<ScoreCard | null> {
-  const url = await getSiteUrl(tenantId);
-  if (!url) return null;
+/** Before → after for every tracked website. */
+export async function getScoreCards(tenantId: string): Promise<ScoreCard[]> {
+  const sites = await getTrackedSites(tenantId);
+  return Promise.all(sites.map((site) => scoreCardFor(tenantId, site)));
+}
+
+async function scoreCardFor(tenantId: string, site: TrackedSite): Promise<ScoreCard> {
   const rows = (
-    await db().select().from(schema.siteScans).where(and(eq(schema.siteScans.tenantId, tenantId), eq(schema.siteScans.url, url))).orderBy(desc(schema.siteScans.createdAt)).limit(40)
+    await db()
+      .select()
+      .from(schema.siteScans)
+      .where(and(eq(schema.siteScans.tenantId, tenantId), eq(schema.siteScans.url, site.url)))
+      .orderBy(desc(schema.siteScans.createdAt))
+      .limit(40)
   ).map(toStored);
   const before = rows.find((r) => r.kind === "before") ?? rows.find((r) => r.kind === "first") ?? rows[rows.length - 1] ?? null;
   const latest = rows[0] ?? null;
   const after = latest && before && latest.id !== before.id && latest.createdAt > before.createdAt ? latest : null;
 
-  // After a merge, scan once the site has had time to redeploy, and again while it shows no gain.
-  const [merged] = await db()
-    .select({ id: schema.agentNickRuns.id, mergedAt: schema.agentNickRuns.mergedAt })
-    .from(schema.agentNickRuns)
-    .where(and(eq(schema.agentNickRuns.tenantId, tenantId), eq(schema.agentNickRuns.status, "merged")))
-    .orderBy(desc(schema.agentNickRuns.mergedAt))
-    .limit(1);
+  // After the repo's PR is merged, scan once the site has had time to redeploy, and again while it shows no gain.
   let pendingAfter: ScoreCard["pendingAfter"] = null;
-  if (merged?.mergedAt && Date.now() - merged.mergedAt.getTime() < AFTER_GIVE_UP_MS) {
-    const lastAfter = rows.find((r) => r.runId === merged.id && r.kind === "after");
-    const improved = !!lastAfter && !!before && lastAfter.score > before.score;
-    if (!improved) pendingAfter = { runId: merged.id, mergedAt: merged.mergedAt, lastScanAt: lastAfter?.createdAt ?? null };
+  if (site.agentNickSiteId) {
+    const [merged] = await db()
+      .select({ id: schema.agentNickRuns.id, mergedAt: schema.agentNickRuns.mergedAt })
+      .from(schema.agentNickRuns)
+      .where(and(eq(schema.agentNickRuns.siteId, site.agentNickSiteId), eq(schema.agentNickRuns.status, "merged")))
+      .orderBy(desc(schema.agentNickRuns.mergedAt))
+      .limit(1);
+    if (merged?.mergedAt && Date.now() - merged.mergedAt.getTime() < AFTER_GIVE_UP_MS) {
+      const lastAfter = rows.find((r) => r.runId === merged.id && r.kind === "after");
+      const improved = !!lastAfter && !!before && lastAfter.score > before.score;
+      if (!improved) pendingAfter = { runId: merged.id, mergedAt: merged.mergedAt, lastScanAt: lastAfter?.createdAt ?? null };
+    }
   }
-  return { url, before, after, pendingAfter };
+  return { site, before, after, pendingAfter };
 }
 
 /** Whether the page should start the after-scan now (see getScoreCard). */

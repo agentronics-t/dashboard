@@ -1,8 +1,9 @@
 import { AccountActions } from "@/components/AccountActions";
 import { ManageBillingButton, PlanChooser } from "@/components/PlanChooser";
 import { Card, CardTitle, PageHeader, fmt } from "@/components/ui";
-import { billingConfigured, getPlanUsage, getWorkspacePlan, yearlyAvailable } from "@/lib/billing";
+import { billingConfigured, getPlanUsage, getScheduledPlan, getWorkspacePlan, yearlyAvailable } from "@/lib/billing";
 import { planCards } from "@/lib/planCards";
+import { PLANS } from "@agentronics/intel-schema";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,9 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const [profile, { spec, row }, usage] = await Promise.all([getProfile(), getWorkspacePlan(tenantId), getPlanUsage(tenantId)]);
   const l = spec.limits;
   const renews = spec.id !== "free" && row?.currentPeriodEnd ? row.currentPeriodEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
+  const paid = spec.id !== "free" && spec.id !== "enterprise" && !!row?.dodoSubscriptionId;
+  const scheduled = paid ? await getScheduledPlan(row?.dodoSubscriptionId) : null;
+  const scheduledName = scheduled ? PLANS[scheduled.plan].name : null;
 
   return (
     <>
@@ -62,6 +66,13 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
               </span>
             </div>
             {renews && <div className="ag-muted" style={{ fontSize: 12.5, marginTop: 2 }}>Renews {renews}</div>}
+            {scheduled && (
+              <div style={{ fontSize: 12.5, marginTop: 2, fontWeight: 600 }}>
+                Switching to {scheduledName}
+                {scheduled.interval === "year" ? " (yearly)" : ""} on{" "}
+                {new Date(scheduled.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}. You keep {spec.name} until then.
+              </div>
+            )}
             {row && row.status !== "active" && row.status !== "pending" && (
               <div style={{ fontSize: 12.5, marginTop: 2, color: "var(--warning)" }}>Your subscription is {row.status.replace("_", " ")} — you&apos;re on Free until it&apos;s active again.</div>
             )}
@@ -85,6 +96,9 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           next="/account"
           billingReady={billingConfigured()}
           yearlyReady={yearlyAvailable()}
+          paid={paid}
+          renewsOn={row?.currentPeriodEnd?.toISOString() ?? null}
+          scheduled={scheduled}
         />
       </Card>
 

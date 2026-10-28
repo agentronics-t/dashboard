@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { schema } from "@agentronics/intel-schema/db";
 import { NickError, nickFetch } from "@/lib/agentNick";
-import { getSiteUrl, normaliseSiteUrl, recordScan } from "@/lib/siteScore";
+import { getWorkspacePlan } from "@/lib/billing";
+import { runSdkTest } from "@/lib/sdkTest";
+import { getTrackedSites, linkSiteToRepo, normaliseSiteUrl, recordScan, siteUrlForRepo } from "@/lib/siteScore";
 import { db, getTenantId, requireWorkspaceAdmin } from "@/lib/tenant";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
@@ -50,7 +52,7 @@ async function startRun(siteId: string, tenantId: string): Promise<{ runId: stri
   try {
     const out = await nickFetch<{ runId: string }>(`/v1/sites/${siteId}/runs`, { method: "POST", tenantId });
     // The "before" score for this run, taken while the run reads the code.
-    const siteUrl = await getSiteUrl(tenantId);
+    const siteUrl = await siteUrlForRepo(tenantId, siteId);
     if (siteUrl) after(() => recordScan(tenantId, siteUrl, "before", out.runId));
     revalidatePath("/agent-nic");
     return out;
@@ -73,6 +75,16 @@ export async function submitReview(
 ): Promise<ActionResult> {
   return guard(async (tenantId) => {
     await nickFetch(`/v1/runs/${runId}/review`, { method: "POST", body: { tools, ...site }, tenantId });
+    // The address given here is this repo's website from now on (scored before and after).
+    const url = site.siteUrl ? normaliseSiteUrl(site.siteUrl) : null;
+    if (url) {
+      const [run] = await db()
+        .select({ siteId: schema.agentNickRuns.siteId })
+        .from(schema.agentNickRuns)
+        .where(and(eq(schema.agentNickRuns.id, runId), eq(schema.agentNickRuns.tenantId, tenantId)));
+      const { spec } = await getWorkspacePlan(tenantId);
+      if (run) await linkSiteToRepo(tenantId, url, run.siteId, spec.limits.scoredWebsites);
+    }
     revalidatePath(`/agent-nic/runs/${runId}`);
     return {};
   });
@@ -96,26 +108,53 @@ export async function acceptRun(runId: string): Promise<ActionResult> {
   });
 }
 
-/** Save the workspace's website and score it (the first scan). */
+/** Add a website to track and score it (the first scan). */
 export async function saveSiteUrl(raw: string): Promise<ActionResult<{ score: number | null }>> {
   return guard(async (tenantId) => {
     const url = normaliseSiteUrl(raw);
     if (!url) throw new Error("That doesn't look like a website address. Try something like yourcompany.com.");
-    await db().update(schema.tenants).set({ siteUrl: url }).where(eq(schema.tenants.id, tenantId));
+    const [sites, { spec }] = await Promise.all([getTrackedSites(tenantId), getWorkspacePlan(tenantId)]);
+    if (sites.some((s) => s.url === url)) throw new Error("You're already tracking that website.");
+    const max = spec.limits.scoredWebsites;
+    if (max !== null && sites.length >= max) {
+      throw new Error(`${spec.name} includes ${max} website${max === 1 ? "" : "s"}. Remove one, or upgrade in Account to add more.`);
+    }
+    await db().insert(schema.trackedSites).values({ tenantId, url }).onConflictDoNothing();
     const scan = await recordScan(tenantId, url, "first");
     revalidatePath("/agent-nic");
     return { score: scan?.score ?? null };
   });
 }
 
-/** Score the site again now. */
-export async function rescanSite(): Promise<ActionResult<{ score: number | null }>> {
+/** Stop tracking a website (its scans are kept). */
+export async function removeTrackedSite(id: string): Promise<ActionResult> {
   return guard(async (tenantId) => {
-    const url = await getSiteUrl(tenantId);
-    if (!url) throw new Error("Add your website first.");
-    const scan = await recordScan(tenantId, url, "manual");
-    if (!scan) throw new Error("We couldn't scan your site just now. Try again in a minute.");
+    await db().delete(schema.trackedSites).where(and(eq(schema.trackedSites.id, String(id)), eq(schema.trackedSites.tenantId, tenantId)));
+    revalidatePath("/agent-nic");
+    return {};
+  });
+}
+
+/** Score one tracked website again now. */
+export async function rescanSite(id: string): Promise<ActionResult<{ score: number | null }>> {
+  return guard(async (tenantId) => {
+    const site = (await getTrackedSites(tenantId)).find((s) => s.id === id);
+    if (!site) throw new Error("That website isn't tracked any more.");
+    const scan = await recordScan(tenantId, site.url, "manual");
+    if (!scan) throw new Error("We couldn't scan that site just now. Try again in a minute.");
     revalidatePath("/agent-nic");
     return { score: scan.score };
+  });
+}
+
+/** Check the SDK is on the site and send a batch of test events to every console page. */
+export async function testSdk(id: string): Promise<ActionResult<{ message: string; sent: number }>> {
+  return guard(async (tenantId) => {
+    const site = (await getTrackedSites(tenantId)).find((s) => s.id === id);
+    if (!site) throw new Error("That website isn't tracked any more.");
+    const res = await runSdkTest(tenantId, site.url, site.agentNickSiteId);
+    if (!res.sent) throw new Error(res.message);
+    revalidatePath("/", "layout");
+    return { message: res.message, sent: res.sent };
   });
 }

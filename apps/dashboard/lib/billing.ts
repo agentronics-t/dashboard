@@ -49,6 +49,27 @@ export function planStatus(dodoStatus: string): string {
   return "pending";
 }
 
+export interface ScheduledPlan {
+  plan: PaidPlanId;
+  interval: BillingInterval;
+  /** ISO date the switch happens (the next billing date). */
+  at: string;
+}
+
+/** A plan switch waiting for the next billing date, read live from Dodo (null if none or unknown). */
+export async function getScheduledPlan(subscriptionId: string | null | undefined): Promise<ScheduledPlan | null> {
+  const client = dodo();
+  if (!client || !subscriptionId) return null;
+  try {
+    const sub = await client.subscriptions.retrieve(subscriptionId);
+    const change = sub.scheduled_change;
+    const target = change ? planFromProduct(change.product_id) : null;
+    return change && target ? { ...target, at: change.effective_at } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The workspace's effective plan (Free unless a paid subscription is active) and its billing row. */
 export async function getWorkspacePlan(tenantId: string) {
   const [row] = await db().select().from(schema.workspacePlans).where(eq(schema.workspacePlans.tenantId, tenantId));

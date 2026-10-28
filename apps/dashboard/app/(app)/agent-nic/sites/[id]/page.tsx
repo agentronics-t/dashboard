@@ -131,7 +131,6 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
                   <th>Tools</th>
                   <th>Change</th>
                   <th>CI</th>
-                  <th>Cost</th>
                 </tr>
               </thead>
               <tbody>
@@ -172,9 +171,6 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
                         )}
                       </td>
                       <td>{r.ciStatus ?? "—"}</td>
-                      <td className="ag-mono ag-muted" style={{ fontSize: 12 }}>
-                        {r.costUsd > 0 ? `$${r.costUsd.toFixed(3)}` : "—"}
-                      </td>
                     </tr>
                   );
                 })}

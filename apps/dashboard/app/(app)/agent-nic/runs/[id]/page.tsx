@@ -9,7 +9,7 @@ import { upgradeFor } from "@agentronics/intel-schema";
 import { getRun, timeAgo } from "@/lib/agentNick";
 import { billingConfigured, getWorkspacePlan } from "@/lib/billing";
 import { planCards } from "@/lib/planCards";
-import { getSiteUrl } from "@/lib/siteScore";
+import { siteUrlForRepo } from "@/lib/siteScore";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +63,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
     | { fixes?: ReviewSiteFix[]; facts?: { url?: string | null; urlSource?: string | null } }
     | undefined;
   // The address for the review: what Agent Nic found (the saved website comes first there), else the saved website.
-  const savedUrl = run.status === "awaiting_review" ? await getSiteUrl(tenantId) : null;
+  const savedUrl = run.status === "awaiting_review" ? await siteUrlForRepo(tenantId, site.id) : null;
   const detectedUrl = siteStep?.facts?.url ?? savedUrl ?? site.homepage ?? null;
   const detectedSource = siteStep?.facts?.url ? (siteStep.facts.urlSource ?? null) : savedUrl ? "the website you saved in the console" : site.homepage ? "the repository's website on GitHub" : null;
   const siteFixes = siteStep?.fixes ?? [];
@@ -81,7 +81,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
       </div>
       <PageHeader
         title={run.status === "awaiting_review" ? (tools.length ? "Review the proposed tools" : "Review the site files") : "Agent Nic run"}
-        subtitle={`${site.repoFullName}${run.framework ? ` · ${run.framework}` : ""} · started ${timeAgo(run.createdAt)}${run.costUsd > 0 ? ` · model cost $${run.costUsd.toFixed(3)}` : ""}`}
+        subtitle={`${site.repoFullName}${run.framework ? ` · ${run.framework}` : ""} · started ${timeAgo(run.createdAt)}`}
         action={
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {moving && <LiveRefresh intervalMs={2500} />}
