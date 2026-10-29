@@ -12,7 +12,9 @@ import { buildServer } from "./server.ts";
 import type { SecretStore, TaskQueue } from "./gcp.ts";
 
 const ISSUER = "https://clerk.test.agentronics.dev";
-const ORG = `org_test_${Date.now()}`;
+// The workspace is the user's own: the token's org_id is ignored (no teams).
+const SUB = `user_test_${Date.now()}`;
+const ORG = `user:${SUB}`;
 
 class FakeTasks implements TaskQueue {
   enqueued: string[] = [];
@@ -44,10 +46,10 @@ before(async () => {
   const getKey = createLocalJWKSet({ keys: [jwk] });
   jwkSet = getKey;
 
-  token = await new SignJWT({ org_id: ORG })
+  token = await new SignJWT({ org_id: `org_test_${Date.now()}` })
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer(ISSUER)
-    .setSubject("user_test_1")
+    .setSubject(SUB)
     .setIssuedAt()
     .setExpirationTime("5m")
     .sign(privateKey);

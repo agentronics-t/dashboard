@@ -16,7 +16,7 @@ test("plans get strictly more generous and upgrade hints pick the cheapest fit",
   const order = PLAN_IDS.map((id) => PLANS[id]);
   for (let i = 1; i < order.length; i++) {
     const [a, b] = [order[i - 1]!.limits, order[i]!.limits];
-    for (const k of ["agentNickRunsPerMonth", "requestsPerMonth", "seats"] as const) {
+    for (const k of ["agentNickRunsPerMonth", "requestsPerMonth"] as const) {
       assert.ok(b[k] === null || (a[k] !== null && b[k]! >= a[k]!), `${k} grows from ${order[i - 1]!.id} to ${order[i]!.id}`);
     }
   }

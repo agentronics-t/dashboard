@@ -5,7 +5,7 @@ import { BarList, EventFeed } from "@/components/sdk";
 import { AgentKeys } from "@/components/pillars/AgentKeys";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { getWorkspacePlan } from "@/lib/billing";
-import { AUTH_METHODS, AUTH_METHODS_LATER, getAgentKeys, getAuthFailureReasons, getAuthMethodStats } from "@/lib/pillars";
+import { AUTH_METHODS, getAgentKeys, getAuthFailureReasons, getAuthMethodStats } from "@/lib/pillars";
 import { getSdkRecentEvents } from "@/lib/queries";
 import { getTenantId } from "@/lib/tenant";
 import { mintAgentKey, revokeAgentKey } from "./actions";
@@ -85,30 +85,22 @@ export default async function AuthPage() {
                   to see them here.
                 </div>
               ) : (
-                <div style={{ display: "flex", gap: 18, fontSize: 13 }}>
-                  <span>
-                    <strong style={{ fontSize: 20 }}>{fmt(s?.verified ?? 0)}</strong> verified
-                  </span>
-                  <span className="ag-muted">
-                    <strong style={{ fontSize: 20, color: "var(--content)" }}>{fmt(s?.failed ?? 0)}</strong> failed
-                  </span>
-                </div>
+                <>
+                  <div style={{ display: "flex", gap: 18, fontSize: 13 }}>
+                    <span>
+                      <strong style={{ fontSize: 20 }}>{fmt(s?.verified ?? 0)}</strong> verified
+                    </span>
+                    <span className="ag-muted">
+                      <strong style={{ fontSize: 20, color: "var(--content)" }}>{fmt(s?.failed ?? 0)}</strong> failed
+                    </span>
+                  </div>
+                  <ProofBar verified={s?.verified ?? 0} failed={s?.failed ?? 0} />
+                </>
               )}
             </Card>
           );
         })}
       </div>
-
-      <Card style={{ marginBottom: 18 }}>
-        <CardTitle>Coming later</CardTitle>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {AUTH_METHODS_LATER.map((m) => (
-            <div key={m.label} style={{ border: "1px dashed var(--border-strong)", borderRadius: "var(--radius-md)", padding: "8px 12px", fontSize: 13 }}>
-              <strong>{m.label}</strong> <span className="ag-muted">· {m.detail}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
 
       <div style={{ marginBottom: 18 }}>
         <AgentKeys
@@ -120,27 +112,59 @@ export default async function AuthPage() {
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 18, marginBottom: 18 }}>
-        <Card>
-          <CardTitle>Why proofs failed</CardTitle>
-          {reasons.length ? (
-            <BarList items={reasons.map((r) => ({ label: r.reason, value: r.count, color: "var(--warning)" }))} />
-          ) : (
-            <div className="ag-muted" style={{ fontSize: 13 }}>No failed verifications in the last 30 days.</div>
-          )}
-        </Card>
-        <Card>
-          <CardTitle>Set up on your server</CardTitle>
+      <Card style={{ marginBottom: 18 }}>
+        <CardTitle>Why proofs failed</CardTitle>
+        {reasons.length ? (
+          <BarList items={reasons.map((r) => ({ label: r.reason, value: r.count, color: "var(--warning)" }))} />
+        ) : (
+          <div className="ag-muted" style={{ fontSize: 13 }}>No failed verifications in the last 30 days.</div>
+        )}
+      </Card>
+
+      <Card style={{ marginBottom: 18 }}>
+        <CardTitle>Recent identity events</CardTitle>
+        {events.length ? (
+          <EventFeed events={events} />
+        ) : (
+          <div className="ag-muted" style={{ fontSize: 13 }}>
+            No identity events yet. Agent Nic sends a few test events once it adds the SDK to your site, or use{" "}
+            <Link className="ag-link" href="/agent-nic">
+              Send test events
+            </Link>{" "}
+            on Agent Nic.
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        {/* Most sites get the SDK from Agent Nic; server-side verification is the extra step. */}
+        <details>
+          <summary style={{ cursor: "pointer", fontWeight: 700 }}>Verify agents on your server too</summary>
+          <p className="ag-muted" style={{ fontSize: 13, margin: "10px 0" }}>
+            The browser SDK sees agents on your pages. To check keys, Web Bot Auth signatures and OAuth tokens on every request, add the
+            middleware to your server:
+          </p>
           <pre style={{ margin: 0, background: "var(--code-bg)", color: "var(--code-fg)", borderRadius: "var(--radius-md)", padding: 12, fontSize: 12, overflowX: "auto" }}>
             {SETUP}
           </pre>
-        </Card>
-      </div>
-
-      <Card>
-        <CardTitle>Recent identity events</CardTitle>
-        {events.length ? <EventFeed events={events} /> : <div className="ag-muted" style={{ fontSize: 13 }}>No identity events yet.</div>}
+        </details>
       </Card>
     </>
+  );
+}
+
+/** Verified vs failed for one method, as a single bar. */
+function ProofBar({ verified, failed }: { verified: number; failed: number }) {
+  const total = verified + failed;
+  if (!total) return <div className="ag-muted" style={{ fontSize: 12, marginTop: 10 }}>No agents used this yet.</div>;
+  const pct = Math.round((verified / total) * 100);
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", height: 6, borderRadius: 999, overflow: "hidden", background: "var(--surface-raised)" }} role="img" aria-label={`${pct}% verified`}>
+        <div style={{ width: `${pct}%`, background: "var(--success)" }} />
+        <div style={{ flex: 1, background: failed ? "var(--warning)" : "transparent" }} />
+      </div>
+      <div className="ag-muted" style={{ fontSize: 12, marginTop: 4 }}>{pct}% verified</div>
+    </div>
   );
 }

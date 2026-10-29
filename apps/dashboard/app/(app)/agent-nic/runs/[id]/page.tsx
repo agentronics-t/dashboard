@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Card, CardTitle, PageHeader, fmt } from "@/components/ui";
-import { Pipeline, RunLog, statusBadgeProps } from "@/components/agent-nick/Pipeline";
+import { Pipeline, statusBadgeProps } from "@/components/agent-nick/Pipeline";
+import { RunLog } from "@/components/agent-nick/RunLog";
 import { ReviewPanel, type ReviewPlan, type ReviewSiteFix, type ReviewTool } from "@/components/agent-nick/ReviewPanel";
 import { AcceptButton, RerunButton } from "@/components/agent-nick/RunActions";
 import { LiveRefresh } from "@/components/LiveRefresh";
@@ -10,6 +11,8 @@ import { getRun, timeAgo } from "@/lib/agentNick";
 import { billingConfigured, getWorkspacePlan } from "@/lib/billing";
 import { planCards } from "@/lib/planCards";
 import { siteUrlForRepo } from "@/lib/siteScore";
+import { SDK_READY, sendTestEventsOnce } from "@/lib/sdkTest";
+import { after } from "next/server";
 import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +70,13 @@ export default async function RunPage({ params, searchParams }: { params: Promis
   const detectedUrl = siteStep?.facts?.url ?? savedUrl ?? site.homepage ?? null;
   const detectedSource = siteStep?.facts?.url ? (siteStep.facts.urlSource ?? null) : savedUrl ? "the website you saved in the console" : site.homepage ? "the repository's website on GitHub" : null;
   const siteFixes = siteStep?.fixes ?? [];
-  const decision = (run.decision ?? {}) as { siteFiles?: { kind: string; approved: boolean }[] };
+  const decision = (run.decision ?? {}) as { siteFiles?: { kind: string; approved: boolean }[]; siteUrl?: string | null };
+  // The pull request added the SDK: send the test events now (once per website), so
+  // Detect, Analytics and the other pages have data before the merge.
+  if (SDK_READY.includes(run.status) && decision.siteFiles?.some((f) => f.kind === "sdk" && f.approved)) {
+    const url = decision.siteUrl ?? (await siteUrlForRepo(tenantId, site.id));
+    if (url) after(() => sendTestEventsOnce(tenantId, url, site.id));
+  }
   const siteApproved = siteFixes.filter((f) => decision.siteFiles?.some((d) => d.kind === f.kind && d.approved)).map((f) => f.title);
   const shipped = [run.toolsApproved ? `${run.toolsApproved} WebMCP tool${run.toolsApproved === 1 ? "" : "s"}` : "", ...siteApproved].filter(Boolean).join(", ");
   const dryRun = run.status === "ready" ? events.find((e) => e.step === "pr" && e.kind === "done")?.data as { files?: { path: string; content: string }[] } | undefined : undefined;

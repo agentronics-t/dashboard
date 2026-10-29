@@ -1,18 +1,26 @@
-// The Agent Nic pipeline drawn from the run's event log: six steps, each a box
-// with its name, coloured by state. The run log underneath has the details.
+// The Agent Nic pipeline drawn from the run's event log: ten steps in two rows
+// of five, each a box with its name, coloured by state. The activity log
+// underneath (RunLog.tsx) has the details.
 import type { Run, RunEvent } from "@/lib/agentNick";
 
 type State = "pending" | "running" | "waiting" | "done" | "failed";
 
-/** What the customer sees: six steps, each covering one or more of the service's steps. */
+/** What the customer sees: ten steps, each covering one or two of the service's steps. */
 export const STEPS: { id: string; label: string; parts: string[] }[] = [
-  { id: "read", label: "Read your code", parts: ["read", "framework", "pages", "actions"] },
-  { id: "plan", label: "Plan the fixes", parts: ["site", "propose"] },
+  { id: "read", label: "Read your code", parts: ["read", "framework"] },
+  { id: "pages", label: "Find pages", parts: ["pages"] },
+  { id: "actions", label: "Find actions", parts: ["actions"] },
+  { id: "site", label: "Check the site", parts: ["site"] },
+  { id: "propose", label: "Plan the tools", parts: ["propose"] },
   { id: "review", label: "Your review", parts: ["review"] },
   { id: "write", label: "Write the code", parts: ["write", "validate"] },
-  { id: "pr", label: "Pull request", parts: ["pr", "ci"] },
+  { id: "pr", label: "Pull request", parts: ["pr"] },
+  { id: "ci", label: "Checks", parts: ["ci"] },
   { id: "live", label: "Live", parts: ["live"] }
 ];
+
+/** The shown step a service step belongs to (for the activity log). */
+export const stepLabel = (part: string) => STEPS.find((s) => s.parts.includes(part))?.label ?? part;
 
 const KIND_STATE: Record<string, State> = { start: "running", done: "done", fail: "failed", wait: "waiting" };
 const GLYPH: Record<State, string> = { pending: "", running: "•", waiting: "!", done: "✓", failed: "✕" };
@@ -55,8 +63,7 @@ export function Pipeline({ run, events }: { run: Run; events: RunEvent[] }) {
   return (
     <ol className="ag-flow ag-flow--compact" aria-label="Agent Nic pipeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
       {STEPS.map((s, i) => {
-        // The CI part only exists once a PR is open; don't let its absence hold "Pull request" back.
-        const parts = s.parts.filter((p) => p !== "ci" || states.ci).map((p) => states[p]?.state);
+        const parts = s.parts.map((p) => states[p]?.state);
         const state = groupState(parts);
         return (
           <li key={s.id} className="ag-node" data-state={state} aria-current={state === "running" || state === "waiting" ? "step" : undefined}>
@@ -79,25 +86,6 @@ export function Pipeline({ run, events }: { run: Run; events: RunEvent[] }) {
         );
       })}
     </ol>
-  );
-}
-
-const KIND_LABEL: Record<string, string> = { start: "started", done: "done", fail: "failed", wait: "waiting", info: "note" };
-
-export function RunLog({ events }: { events: RunEvent[] }) {
-  if (!events.length) return <p className="ag-muted" style={{ margin: 0 }}>Starting…</p>;
-  return (
-    <ul className="ag-log">
-      {[...events].reverse().map((e) => (
-        <li key={e.id}>
-          <span className="ag-muted">{new Date(e.createdAt).toLocaleTimeString("en-US", { hour12: false })}</span>
-          <span style={{ color: e.kind === "fail" ? "var(--danger)" : e.kind === "done" ? "var(--success)" : e.kind === "wait" ? "var(--warning)" : "var(--content-secondary)" }}>
-            {e.step} · {KIND_LABEL[e.kind] ?? e.kind}
-          </span>
-          <span style={{ fontFamily: "var(--font-sans)", overflowWrap: "anywhere" }}>{e.message}</span>
-        </li>
-      ))}
-    </ul>
   );
 }
 

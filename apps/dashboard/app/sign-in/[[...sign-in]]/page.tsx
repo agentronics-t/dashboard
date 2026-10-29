@@ -11,7 +11,7 @@ export default function SignInPage() {
     <AuthShell variant="sign-in">
       {/* withSignUp: an email or Google/GitHub account we don't know yet creates the
           account right here instead of "Couldn't find your account". */}
-      <SignIn withSignUp signUpUrl="/sign-up" fallbackRedirectUrl="/agent-nic" signUpFallbackRedirectUrl="/agent-nic" />
+      <SignIn routing="path" path="/sign-in" withSignUp signUpUrl="/sign-up" fallbackRedirectUrl="/agent-nic" signUpFallbackRedirectUrl="/agent-nic" />
     </AuthShell>
   );
 }

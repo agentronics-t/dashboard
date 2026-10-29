@@ -17,8 +17,15 @@ const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 // Sign-in also signs new people up (withSignUp), so say so. Keep in step with
 // the copy in components/AuthStaticCard.tsx.
+// Email codes often land in spam or Promotions (Gmail), so every code screen says where to look.
+const CODE_HINT = "Enter the 6-digit code we emailed you. Can’t find it? Check your spam, junk or Promotions folder.";
 const CLERK_LOCALIZATION = {
-  signIn: { start: { titleCombined: "Sign in to agentronics", subtitleCombined: "New here? We’ll create your account." } }
+  signIn: {
+    start: { titleCombined: "Sign in to agentronics", subtitleCombined: "New here? We’ll create your account." },
+    emailCode: { subtitle: CODE_HINT },
+    emailCodeMfa: { subtitle: CODE_HINT }
+  },
+  signUp: { emailCode: { subtitle: CODE_HINT, formSubtitle: CODE_HINT } }
 };
 
 // Clerk's sign-in, user menu and org switcher in the design system: lime

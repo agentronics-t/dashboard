@@ -5,6 +5,7 @@ import { getSdkEventTotals, getSdkForecasts, getSdkInsights } from "@/lib/querie
 import { getTop } from "@/lib/pillars";
 import { getTenantId } from "@/lib/tenant";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { LocalTime } from "@/components/LocalTime";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +100,7 @@ export default async function AnalyticsPage() {
                   </div>
                   <div style={{ fontSize: 14, color: "var(--content-secondary)", lineHeight: 1.55 }}>{renderBody(it.body_md)}</div>
                   <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--content-muted)" }}>
-                    {it.kind} · {new Date(it.created_at as unknown as string).toLocaleString()}
+                    {it.kind} · <LocalTime at={it.created_at as unknown as string} />
                   </div>
                 </Card>
               ))}

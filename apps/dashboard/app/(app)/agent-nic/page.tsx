@@ -7,7 +7,7 @@ import { LiveRefresh } from "@/components/LiveRefresh";
 import { AddWebsite, SiteScore, SiteUrlForm, type ScorePoint } from "@/components/agent-nick/SiteScore";
 import { after } from "next/server";
 import { afterScanDue, getScoreCards, recordScan, type StoredScan } from "@/lib/siteScore";
-import { runSdkTest, sentTestEvents } from "@/lib/sdkTest";
+import { SDK_READY, sendTestEventsOnce } from "@/lib/sdkTest";
 import { agentNickConfigured, getInstallations, getSites, githubAppSlug, timeAgo } from "@/lib/agentNick";
 import { getPlanUsage, getWorkspacePlan } from "@/lib/billing";
 import { limitLabel } from "@agentronics/intel-schema";
@@ -39,11 +39,14 @@ export default async function AgentNickPage({ searchParams }: { searchParams: Pr
   for (const card of scores) {
     if (!afterScanDue(card)) continue;
     const { site, pendingAfter } = card;
-    after(async () => {
-      await recordScan(tenantId, site.url, "after", pendingAfter!.runId);
-      // Once the SDK is live on the redeployed site, send its test events (once per site).
-      if (!(await sentTestEvents(tenantId, new URL(site.url).hostname))) await runSdkTest(tenantId, site.url, site.agentNickSiteId, { requireLive: true });
-    });
+    after(() => recordScan(tenantId, site.url, "after", pendingAfter!.runId).then(() => {}));
+  }
+  // Once Agent Nic's pull request has added the SDK (and made its key), send the
+  // test events, once per website, so every page has data before the merge.
+  for (const card of scores) {
+    const nick = sites.find((s) => s.site.id === card.site.agentNickSiteId);
+    if (!nick?.lastRun || !SDK_READY.includes(nick.lastRun.status)) continue;
+    after(() => sendTestEventsOnce(tenantId, card.site.url, card.site.agentNickSiteId));
   }
   const waitingForRedeploy = scores.some((c) => c.pendingAfter);
   const websiteLimit = plan.limits.scoredWebsites;

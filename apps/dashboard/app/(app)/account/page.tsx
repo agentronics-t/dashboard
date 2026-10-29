@@ -10,15 +10,13 @@ export const dynamic = "force-dynamic";
 
 async function getProfile() {
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
-    return { name: "Demo user", email: "demo@agentronics.dev", workspace: "Demo workspace" };
+    return { name: "Demo user", email: "demo@agentronics.dev" };
   }
-  const { auth, currentUser } = await import("@clerk/nextjs/server");
-  const [user, { orgId, orgSlug }] = await Promise.all([currentUser(), auth()]);
+  const { currentUser } = await import("@clerk/nextjs/server");
+  const user = await currentUser();
   return {
     name: user?.fullName || user?.username || "—",
-    email: user?.primaryEmailAddress?.emailAddress || "—",
-    // An organization's workspace is shared with its members; otherwise it's yours alone.
-    workspace: orgSlug ? `Team (${orgSlug})` : orgId ? "Team" : "Personal"
+    email: user?.primaryEmailAddress?.emailAddress || "—"
   };
 }
 
@@ -106,7 +104,6 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         <CardTitle>Profile</CardTitle>
         <Row label="Name" value={profile.name} />
         <Row label="Email" value={profile.email} />
-        <Row label="Workspace" value={profile.workspace} />
       </Card>
 
       <Card>

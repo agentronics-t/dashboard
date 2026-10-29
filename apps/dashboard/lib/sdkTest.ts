@@ -3,7 +3,9 @@
 // small batch of test events through the same public endpoint the browser SDK
 // uses (/v1/pub/traces, the key's allowed origin). The batch touches every
 // console page — Detect, Auth, Authz, WebMCP Tools, Memory, Observability and
-// Analytics — so a new customer sees each one filled in. Test events carry
+// Analytics — so a new customer sees each one filled in. It goes out on its own
+// as soon as Agent Nic's pull request adds the SDK (before the merge), and again
+// from "Send test events". Test events carry
 // metadata.test = true and the vendor "Agentronics test".
 
 import "server-only";
@@ -167,12 +169,34 @@ export async function runSdkTest(tenantId: string, url: string, agentNickSiteId:
     return { hasKey: true, live, sent: 0, message: `The API didn't take the test events (${body?.error ?? res?.status ?? "no answer"}).` };
   }
   const sent = body?.accepted ?? events.length;
+  await seedSiteMemory(tenantId, u, tools).catch(() => {});
   return {
     hasKey: true,
     live,
     sent,
-    message: `${live ? "The SDK is live on your site. " : "The SDK isn't on the live site yet (merge the PR and redeploy), but the connection works. "}Sent ${sent} test events: open Detect, Auth, Authz, WebMCP Tools, Memory or Observability to see them.`
+    message: `${live ? "The SDK is live on your site. " : "The SDK isn't on the live site yet (merge the PR and redeploy), but the connection works. "}Sent ${sent} test events: open Detect, Auth, Authz, WebMCP Tools, Memory, Observability or Analytics to see them.`
   };
+}
+
+/**
+ * Site memory (the Memory page's "Site memory" card) comes from the SDK's
+ * provideSiteMemory(), which has no public endpoint. Until the site sends its
+ * own, start it with what we know: the site's pages and tools. Never replaces
+ * a snapshot the site sent.
+ */
+async function seedSiteMemory(tenantId: string, u: URL, tools: ToolDescriptor[]) {
+  const pages = [...new Set(tools.map((t) => t.page ?? "/"))].sort();
+  const snapshot = {
+    site: u.hostname,
+    url: u.origin,
+    pages,
+    tools: tools.map((t) => ({ name: t.name, page: t.page ?? "every page", description: t.description ?? "" })),
+    source: "Agentronics connection test (replaced when your site's SDK sends its own)"
+  };
+  await db()
+    .insert(schema.sdkSiteMemory)
+    .values({ tenantId, siteId: u.hostname, snapshot, score: Math.min(100, 40 + tools.length * 10) })
+    .onConflictDoNothing();
 }
 
 /** Whether this site already got its test batch. */
@@ -182,4 +206,23 @@ export async function sentTestEvents(tenantId: string, host: string): Promise<bo
     .from(schema.sdkEvents)
     .where(and(eq(schema.sdkEvents.tenantId, tenantId), eq(schema.sdkEvents.siteId, host), sql`${schema.sdkEvents.metadata}->>'test' = 'true'`));
   return Number(row?.n ?? 0) > 0;
+}
+
+/** Run states after Agent Nic has written its code (the SDK's key exists if it was approved). */
+export const SDK_READY = ["pr_open", "merged", "live"];
+
+// Pages poll every few seconds while a run moves; try each website at most once a minute per server instance.
+const tried = new Map<string, number>();
+
+/** The test batch for a website, unless it already had one. Quiet when there's no key yet. */
+export async function sendTestEventsOnce(tenantId: string, url: string, agentNickSiteId: string | null): Promise<void> {
+  const k = `${tenantId}|${url}`;
+  if (Date.now() - (tried.get(k) ?? 0) < 60_000) return;
+  tried.set(k, Date.now());
+  try {
+    if (await sentTestEvents(tenantId, new URL(url).hostname)) return;
+    await runSdkTest(tenantId, url, agentNickSiteId);
+  } catch (err) {
+    console.error("sdk test events failed", { url, err: err instanceof Error ? err.message : String(err) });
+  }
 }
