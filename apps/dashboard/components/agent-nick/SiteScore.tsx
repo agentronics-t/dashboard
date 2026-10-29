@@ -19,13 +19,14 @@ const BAND_COLOR: Record<ScorePoint["band"], string> = { not: "var(--danger)", p
 const BAND_LABEL: Record<ScorePoint["band"], string> = { not: "Not ready", partly: "Partly ready", ready: "Agent-ready" };
 const GROUPS = ["find", "read", "act"] as const;
 
+// Client-only (titles): in the visitor's time zone.
 function when(iso: string) {
-  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return typeof window === "undefined" ? "" : new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function Score({ label, point }: { label: string; point: ScorePoint }) {
   return (
-    <div title={`${BAND_LABEL[point.band]} · ${when(point.at)}`} style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+    <div suppressHydrationWarning title={`${BAND_LABEL[point.band]} · ${when(point.at)}`} style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
       <span className="ag-muted" style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>
         {label}
       </span>

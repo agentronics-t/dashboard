@@ -19,6 +19,10 @@ const nextConfig = {
   // intel-schema ships compiled dist; nothing to transpile from source.
   serverExternalPackages: ["postgres", "@google/genai"],
   eslint: { ignoreDuringBuilds: true },
+  // Sidebar links prefetch whole pages (components/Sidebar.tsx). Keep prefetched
+  // and visited pages for 30 s so switching sections is instant; pages with a
+  // "Live" badge refresh themselves, and server actions clear this cache.
+  experimental: { staleTimes: { dynamic: 30, static: 30 } },
   async redirects() {
     // The intelligence platform is retired (see app/_intelligence/README.md).
     const retired = ["/forecast", "/insights", "/plugins", "/chat"].map((source) => ({ source, destination: "/", permanent: false }));

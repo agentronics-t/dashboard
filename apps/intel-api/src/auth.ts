@@ -91,8 +91,9 @@ export function clerkVerifier(opts: {
         throw new AuthError(err instanceof Error ? err.message : "invalid token");
       }
       if (!payload.sub) throw new AuthError("token missing sub");
-      const orgId = typeof payload.org_id === "string" ? payload.org_id : undefined;
-      return { userId: payload.sub, orgKey: orgId ?? `user:${payload.sub}` };
+      // A workspace is one person's (no teams): an organization in the token is
+      // ignored, the same as the console does (apps/dashboard/lib/tenant.ts).
+      return { userId: payload.sub, orgKey: `user:${payload.sub}` };
     }
   };
 }

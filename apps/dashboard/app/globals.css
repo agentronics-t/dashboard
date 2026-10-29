@@ -163,7 +163,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
 
 /* Pipeline flow — the swarm diagram as live status nodes. */
 .ag-flow { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px 10px; counter-reset: step; }
-.ag-flow--compact { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.ag-flow--compact { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 900px) { .ag-flow--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .ag-flow--compact .ag-node { min-height: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .ag-node { position: relative; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 11px 12px 12px; background: var(--surface); min-height: 96px; transition: border-color var(--dur-med), background var(--dur-med); }
 .ag-node[data-state="running"] { border-color: var(--border-strong); background: var(--brand-soft); }
@@ -184,7 +185,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
 @media (prefers-reduced-motion: reduce) { .ag-node[data-state="running"] .ag-dot { animation: none; } }
 
 .ag-log { margin: 0; padding: 0; list-style: none; font-family: var(--font-mono); font-size: 12.5px; max-height: 340px; overflow-y: auto; }
-.ag-log li { display: grid; grid-template-columns: 64px 92px 1fr; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+.ag-log { max-height: 420px; }
+.ag-log li { display: grid; grid-template-columns: 92px 150px 1fr; gap: 12px; padding: 7px 4px; border-bottom: 1px solid var(--border); align-items: baseline; }
+.ag-log-step { font-family: var(--font-sans); font-weight: 600; font-size: 13px; }
 .ag-log li:last-child { border-bottom: none; }
 
 .ag-hero-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0 20px; }
@@ -195,8 +198,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }
 @media (max-width: 900px) {
   .ag-grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ag-hero-steps { grid-template-columns: 1fr; }
-  .ag-log li { grid-template-columns: 56px 1fr; }
-  .ag-log li > :nth-child(2) { display: none; }
+  .ag-log li { grid-template-columns: 1fr; gap: 2px; }
 }
 
 /* Loading skeleton (app/(app)/loading.tsx) */

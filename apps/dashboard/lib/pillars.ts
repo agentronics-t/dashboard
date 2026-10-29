@@ -19,13 +19,6 @@ export const AUTH_METHODS = [
 ] as const;
 export type AuthMethodId = (typeof AUTH_METHODS)[number]["id"];
 
-/** Coming later — shown greyed on the Auth page. */
-export const AUTH_METHODS_LATER = [
-  { label: "Enterprise agent SSO", detail: "ID-JAG / Cross App Access — Okta, Entra Agent ID, Auth0" },
-  { label: "Workload identity", detail: "SPIFFE, incl. Google Agent Identity" },
-  { label: "mTLS", detail: "Client certificates, server-side" }
-];
-
 export interface MethodStats {
   method: string;
   verified: number;

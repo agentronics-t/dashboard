@@ -29,11 +29,9 @@ export function clerkVerifier(opts: { issuer: string; jwksUrl?: string; getKey?:
         throw new AuthError(err instanceof Error ? err.message : "invalid token");
       }
       if (!payload.sub) throw new AuthError("token missing sub");
-      // Clerk session tokens v2 nest org claims under `o`; v1 used flat org_* claims.
-      const o = (payload.o ?? {}) as { id?: string; rol?: string };
-      const orgId = typeof payload.org_id === "string" ? payload.org_id : o.id;
-      const role = typeof payload.org_role === "string" ? payload.org_role : o.rol ? `org:${o.rol}` : undefined;
-      return { userId: payload.sub, orgKey: orgId ?? `user:${payload.sub}`, isAdmin: !orgId || role === "org:admin" };
+      // A workspace is one person's (no teams): an organization in the token is
+      // ignored, the same as the console does (apps/dashboard/lib/tenant.ts).
+      return { userId: payload.sub, orgKey: `user:${payload.sub}`, isAdmin: true };
     }
   };
 }

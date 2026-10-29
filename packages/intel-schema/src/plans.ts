@@ -39,8 +39,6 @@ export interface PlanSpec {
     agentApiKeys: number | null;
     /** 0 = authorization not included. */
     authzPolicies: number | null;
-    /** Team members who can sign in to the console ("seats"). */
-    seats: number | null;
   };
   features: {
     toolGroups: boolean;
@@ -79,8 +77,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       requestsPerMonth: 5_000,
       retentionDays: 7,
       agentApiKeys: 3,
-      authzPolicies: 0,
-      seats: 1
+      authzPolicies: 0
     },
     features: {
       toolGroups: YES,
@@ -114,8 +111,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       requestsPerMonth: 50_000,
       retentionDays: 30,
       agentApiKeys: 25,
-      authzPolicies: 5,
-      seats: 2
+      authzPolicies: 5
     },
     features: {
       toolGroups: YES,
@@ -149,8 +145,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       requestsPerMonth: 250_000,
       retentionDays: 90,
       agentApiKeys: null,
-      authzPolicies: null,
-      seats: 5
+      authzPolicies: null
     },
     features: {
       toolGroups: YES,
@@ -184,8 +179,7 @@ export const PLANS: Record<PlanId, PlanSpec> = {
       requestsPerMonth: null,
       retentionDays: null,
       agentApiKeys: null,
-      authzPolicies: null,
-      seats: null
+      authzPolicies: null
     },
     features: {
       toolGroups: YES,

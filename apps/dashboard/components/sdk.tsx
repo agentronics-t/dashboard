@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import { Badge, Card, fmt } from "@/components/ui";
 import type { SdkEventRow } from "@/lib/queries";
+import { LocalTime } from "@/components/LocalTime";
 
 /** Shown on every SDK page until events arrive. */
 export function SdkEmpty({ feature }: { feature: string }) {
@@ -10,12 +11,13 @@ export function SdkEmpty({ feature }: { feature: string }) {
       <div style={{ fontSize: 14, color: "var(--content-secondary)", fontWeight: 600 }}>
         No {feature} events yet
       </div>
-      <div style={{ fontSize: 13, color: "var(--content-muted)", marginTop: 6, maxWidth: 460, marginInline: "auto" }}>
-        Add an SDK ingest key in{" "}
-        <a href="/settings" style={{ color: "var(--brand)" }}>
-          Settings
-        </a>{" "}
-        and stream events from your backend to <code>POST /v1/sdk/events</code>.
+      <div style={{ fontSize: 13, color: "var(--content-muted)", marginTop: 6, maxWidth: 480, marginInline: "auto", lineHeight: 1.5 }}>
+        Events arrive once the Agentronics SDK is on your site. Agent Nic adds it in its pull request and sends a few test events
+        right away, so every page shows something. You can send them again with <strong>Send test events</strong> on{" "}
+        <a href="/agent-nic" style={{ color: "var(--brand)" }}>
+          Agent Nic
+        </a>
+        .
       </div>
     </Card>
   );
@@ -26,14 +28,6 @@ const OUTCOME_KIND: Record<string, string> = {
   blocked: "warning",
   error: "failed"
 };
-
-const shortTime = (d: Date) =>
-  new Date(d).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
 
 /** A scrollable feed of raw events — used by Logs + per-pillar pages. */
 export function EventFeed({ events, showType = true }: { events: SdkEventRow[]; showType?: boolean }) {
@@ -55,7 +49,7 @@ export function EventFeed({ events, showType = true }: { events: SdkEventRow[]; 
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <span style={{ color: "var(--content-muted)", fontFamily: "var(--font-mono)", fontSize: 12, flex: "none" }}>
-              {shortTime(e.occurredAt)}
+              <LocalTime at={e.occurredAt} />
             </span>
             {showType && (
               <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, flex: "none" }}>{e.type}</span>

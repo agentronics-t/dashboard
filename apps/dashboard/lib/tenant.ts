@@ -13,10 +13,12 @@ export function db() {
 }
 
 /**
- * Resolve the active tenant. With Clerk configured, maps the user's org (or a
- * per-user tenant) to tenants.clerk_org_id, creating the row the first time,
- * mirroring intel-api's tenant resolution. Without Clerk, the demo tenant is
- * used so the dashboard works in dev.
+ * Resolve the active tenant: the signed-in person's own workspace
+ * (tenants.clerk_org_id = "user:<id>"), created the first time. Without Clerk,
+ * the demo tenant is used so the dashboard works in dev. There are no team
+ * workspaces: a Clerk organization still active in someone's session is
+ * ignored, after its data has moved into their workspace (workspaceMerge.ts).
+ * intel-api and Agent Nic resolve the same tenant from the session token.
  *
  * Every page and action calls this, so it reads first (one indexed SELECT) and
  * only writes for a brand-new workspace, and React's cache() runs it once per
@@ -26,37 +28,37 @@ export const getTenantId = cache(async (): Promise<string> => {
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) return DEMO_TENANT_ID;
 
   const { auth } = await import("@clerk/nextjs/server");
-  const { userId, orgId } = await auth();
+  const { userId, orgId, orgRole } = await auth();
   // The middleware protects every page; never fall back to shared data.
   if (!userId) redirect("/sign-in");
-  const orgKey = orgId ?? `user:${userId}`;
+  const key = `user:${userId}`;
 
   const [existing] = await db()
     .select({ id: schema.tenants.id })
     .from(schema.tenants)
-    .where(eq(schema.tenants.clerkOrgId, orgKey))
+    .where(eq(schema.tenants.clerkOrgId, key))
     .limit(1);
-  if (existing) return existing.id;
-
-  const [created] = await db()
-    .insert(schema.tenants)
-    .values({ name: orgKey, clerkOrgId: orgKey })
-    .onConflictDoUpdate({ target: schema.tenants.clerkOrgId, set: { clerkOrgId: orgKey } })
-    .returning({ id: schema.tenants.id });
-  // A new team workspace starts on Free: one seat until it upgrades.
-  if (orgId) await (await import("./seats")).syncSeats(created.id, "free");
-  return created.id;
+  const id =
+    existing?.id ??
+    (
+      await db()
+        .insert(schema.tenants)
+        .values({ name: key, clerkOrgId: key })
+        .onConflictDoUpdate({ target: schema.tenants.clerkOrgId, set: { clerkOrgId: key } })
+        .returning({ id: schema.tenants.id })
+    )[0]!.id;
+  // Only the organization's admin takes its data (once; later calls find nothing to move).
+  if (orgId && orgRole === "org:admin") await (await import("./workspaceMerge")).mergeOrgWorkspace(orgId, id);
+  return id;
 });
 
 /**
  * Server-action guard for workspace-changing operations (keys, billing):
- * requires a signed-in user and, inside an organization, the admin role.
- * Without Clerk (local dev) the demo tenant is allowed.
+ * requires a signed-in user. Without Clerk (local dev) the demo tenant is allowed.
  */
 export async function requireWorkspaceAdmin(): Promise<void> {
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) return;
   const { auth } = await import("@clerk/nextjs/server");
-  const { userId, orgId, orgRole } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("unauthenticated");
-  if (orgId && orgRole !== "org:admin") throw new Error("Only organization admins can manage keys.");
 }

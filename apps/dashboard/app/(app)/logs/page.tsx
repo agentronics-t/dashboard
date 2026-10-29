@@ -5,6 +5,7 @@ import { LiveRefresh } from "@/components/LiveRefresh";
 import { getFilteredEvents, getLatency, getSessions, type EventFilters } from "@/lib/pillars";
 import { getWorkspacePlan } from "@/lib/billing";
 import { getTenantId } from "@/lib/tenant";
+import { LocalTime } from "@/components/LocalTime";
 
 export const dynamic = "force-dynamic";
 
@@ -102,7 +103,7 @@ export default async function ObservabilityPage({ searchParams }: { searchParams
                         <td>{fmt(s.toolCalls)}</td>
                         <td>{s.errors ? <Badge kind="failed">{fmt(s.errors)}</Badge> : "0"}</td>
                         <td>{duration(s.startedAt, s.endedAt)}</td>
-                        <td className="ag-muted">{s.endedAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                        <td className="ag-muted"><LocalTime at={s.endedAt} /></td>
                       </tr>
                     ))}
                   </tbody>
