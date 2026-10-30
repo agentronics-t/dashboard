@@ -71,9 +71,10 @@ export default async function RunPage({ params, searchParams }: { params: Promis
   const detectedSource = siteStep?.facts?.url ? (siteStep.facts.urlSource ?? null) : savedUrl ? "the website you saved in the console" : site.homepage ? "the repository's website on GitHub" : null;
   const siteFixes = siteStep?.fixes ?? [];
   const decision = (run.decision ?? {}) as { siteFiles?: { kind: string; approved: boolean }[]; siteUrl?: string | null };
-  // The pull request added the SDK: send the test events now (once per website), so
-  // Detect, Analytics and the other pages have data before the merge.
-  if (SDK_READY.includes(run.status) && decision.siteFiles?.some((f) => f.kind === "sdk" && f.approved)) {
+  // The pull request is open, so the site's SDK key exists (Agent Nic makes one on
+  // every run): send the test events now (once per website), so Detect, Analytics
+  // and the other pages have data before the merge.
+  if (SDK_READY.includes(run.status)) {
     const url = decision.siteUrl ?? (await siteUrlForRepo(tenantId, site.id));
     if (url) after(() => sendTestEventsOnce(tenantId, url, site.id));
   }

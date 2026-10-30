@@ -12,7 +12,6 @@ import { normaliseUrl } from "./pipeline/sitefiles.ts";
 import { SITE_FIX_KINDS, type SiteFixKind } from "./pipeline/types.ts";
 
 /** Site fixes written with the site's address in them. */
-const NEEDS_URL = new Set<SiteFixKind>(["sitemap", "structured-data", "sdk"]);
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -273,11 +272,23 @@ export function buildServer(deps: ServerDeps) {
         })
         .parse(req.body);
 
-      // The sitemap, structured data and the SDK's key need the site's real address.
-      const siteUrl = normaliseUrl(body.siteUrl);
-      if (body.siteUrl && !siteUrl) return reply.status(400).send({ error: "bad_site_url", message: "That doesn't look like your site's address (e.g. https://yourcompany.com)." });
-      const needsUrl = (body.siteFiles ?? []).some((f) => f.approved && NEEDS_URL.has(f.kind));
-      if (needsUrl && !siteUrl) return reply.status(400).send({ error: "site_url_required", message: "Add your site's address: the sitemap, structured data and the SDK need it." });
+      // The SDK is the product (it feeds every console page): when Agent Nic
+      // offered it, it ships, whatever the review sent.
+      const offered = await db
+        .select({ data: schema.agentNickEvents.data })
+        .from(schema.agentNickEvents)
+        .where(and(eq(schema.agentNickEvents.runId, runId), eq(schema.agentNickEvents.step, "site"), eq(schema.agentNickEvents.kind, "done")))
+        .limit(1);
+      const siteStep = offered[0]?.data as { fixes?: { kind: string }[]; facts?: { url?: string | null } } | null;
+      const sdkOffered = (siteStep?.fixes ?? []).some((f) => f.kind === "sdk");
+      if (sdkOffered) body.siteFiles = [...(body.siteFiles ?? []).filter((f) => f.kind !== "sdk"), { kind: "sdk", approved: true }];
+
+      // Every run needs the site's real address: Agent Nic makes the site's SDK
+      // key for it (and the sitemap and structured data use it). What the review
+      // sent wins; otherwise the address Agent Nic found.
+      if (body.siteUrl && !normaliseUrl(body.siteUrl)) return reply.status(400).send({ error: "bad_site_url", message: "That doesn't look like your site's address (e.g. https://yourcompany.com)." });
+      const siteUrl = normaliseUrl(body.siteUrl) ?? normaliseUrl(siteStep?.facts?.url ?? null);
+      if (!siteUrl) return reply.status(400).send({ error: "site_url_required", message: "Add your site's address: Agent Nic creates your Agentronics SDK key for it." });
 
       // Plan limits: how many tools, and which kinds, this workspace may ship.
       const plan = await tenantPlan(db, req.tenantId);
