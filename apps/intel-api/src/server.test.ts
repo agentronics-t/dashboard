@@ -753,3 +753,23 @@ test("public API: a revoked publishable key stops working", async () => {
   assert.equal((await local.inject({ method: "GET", url: "/v1/pub/health", headers: { authorization: `Bearer ${pk}` } })).statusCode, 401);
   await local.close();
 });
+
+test("public API: writes are rate-limited per visitor, not per site", async () => {
+  const tenantId = (await tenantRow()).id;
+  const pk = `agtx_pk_live_${randomUUID().replace(/-/g, "")}`;
+  const local = buildServer({ db, auth: clerkVerifier({ issuer: ISSUER, getKey: jwkSet }) });
+  await local.ready();
+  await db.insert(schema.sdkPublishableKeys).values({ tenantId, key: pk, allowedOrigins: ["https://shop.example"] });
+  const put = (ip: string) =>
+    local.inject({
+      method: "PUT",
+      url: "/v1/pub/sites/rate-test/tools",
+      headers: { authorization: `Bearer ${pk}`, origin: "https://shop.example", "x-forwarded-for": `${ip}, 10.0.0.1` },
+      payload: { registry: { tools: [] } }
+    });
+  for (let i = 0; i < 120; i++) assert.equal((await put("203.0.113.7")).statusCode, 202);
+  assert.equal((await put("203.0.113.7")).statusCode, 429);
+  // Another visitor of the same site is unaffected.
+  assert.equal((await put("198.51.100.9")).statusCode, 202);
+  await local.close();
+});

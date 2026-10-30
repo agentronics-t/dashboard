@@ -37,7 +37,8 @@ const environment = (): "live_mode" | "test_mode" => (process.env.DODO_PAYMENTS_
 export function dodo(): DodoPayments | null {
   const bearerToken = process.env.DODO_PAYMENTS_API_KEY;
   if (!bearerToken) return null;
-  return new DodoPayments({ bearerToken, environment: environment(), webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_KEY ?? null });
+  // The SDK's default (60 s, two retries) can outlast the page itself; fail fast instead.
+  return new DodoPayments({ bearerToken, environment: environment(), webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_KEY ?? null, timeout: 15_000, maxRetries: 1 });
 }
 
 export const billingConfigured = () => !!process.env.DODO_PAYMENTS_API_KEY && !!planProductId("starter") && !!planProductId("pro");
@@ -61,7 +62,8 @@ export async function getScheduledPlan(subscriptionId: string | null | undefined
   const client = dodo();
   if (!client || !subscriptionId) return null;
   try {
-    const sub = await client.subscriptions.retrieve(subscriptionId);
+    // Only a note on the Account page: never hold the page up for it.
+    const sub = await client.subscriptions.retrieve(subscriptionId, { timeout: 3_000, maxRetries: 0 });
     const change = sub.scheduled_change;
     const target = change ? planFromProduct(change.product_id) : null;
     return change && target ? { ...target, at: change.effective_at } : null;

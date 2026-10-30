@@ -84,17 +84,16 @@ export function Sidebar() {
   };
 
   const NavBtn = ({ href, label, icon }: { href: string; label: string; icon: string }) => (
-    // prefetch: load the whole page ahead of the click (not just the loading
-    // skeleton), so a section opens at once instead of waiting on the server.
-    <Link href={href} prefetch className="ag-nav-btn" data-active={pathname === href || pathname.startsWith(`${href}/`)} title={label} style={{ justifyContent: open ? "flex-start" : "center" }}>
+    <Link href={href} className="ag-nav-btn" data-active={pathname === href || pathname.startsWith(`${href}/`)} title={label} style={{ justifyContent: open ? "flex-start" : "center" }}>
       <Icon name={icon} />
-      <span style={labelStyle}>{label}</span>
+      <span className="ag-nav-label" style={labelStyle}>{label}</span>
     </Link>
   );
 
   return (
     <aside
-      className="ag-pcb"
+      className="ag-pcb ag-side"
+      data-collapsed={!open}
       style={{
         width: open ? 244 : 68,
         flex: "none",
@@ -129,12 +128,12 @@ export function Sidebar() {
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
         <button className="ag-nav-btn" onClick={() => setOpen((o) => !o)} style={{ justifyContent: open ? "flex-start" : "center" }} title="Collapse sidebar">
           <Icon name="chevron" style={{ transform: open ? "none" : "rotate(180deg)" }} />
-          <span style={labelStyle}>Collapse</span>
+          <span className="ag-nav-label" style={labelStyle}>Collapse</span>
         </button>
         {BOTTOM.map((n) => <NavBtn key={n.href} {...n} />)}
         <button className="ag-nav-btn" onClick={toggleTheme} style={{ justifyContent: open ? "flex-start" : "center" }} title="Toggle theme">
           <Icon name={dark ? "sun" : "moon"} />
-          <span style={labelStyle}>{dark ? "Light mode" : "Dark mode"}</span>
+          <span className="ag-nav-label" style={labelStyle}>{dark ? "Light mode" : "Dark mode"}</span>
         </button>
       </div>
     </aside>

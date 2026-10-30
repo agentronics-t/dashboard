@@ -25,7 +25,14 @@ const CLERK_LOCALIZATION = {
     emailCode: { subtitle: CODE_HINT },
     emailCodeMfa: { subtitle: CODE_HINT }
   },
-  signUp: { emailCode: { subtitle: CODE_HINT, formSubtitle: CODE_HINT } }
+  signUp: { emailCode: { subtitle: CODE_HINT, formSubtitle: CODE_HINT } },
+  // Clerk refuses passwords that appear in public breach lists (Have I Been Pwned).
+  unstable__errors: {
+    form_password_pwned:
+      "This password appears in a public list of leaked passwords, so anyone could guess it. Pick one you haven’t used elsewhere, or continue with Google or GitHub.",
+    form_password_pwned__sign_in:
+      "This password appears in a public list of leaked passwords, so it can’t be used any more. Reset it with “Forgot password”, or continue with Google or GitHub."
+  }
 };
 
 // Clerk's sign-in, user menu and org switcher in the design system: lime

@@ -120,6 +120,9 @@ button { font-family: inherit; }
 }
 .ag-nav-btn:hover { background: var(--surface-raised); color: var(--content); }
 .ag-nav-btn[data-active="true"] { background: var(--lime); color: var(--ink); }
+/* Collapsed sidebar: square, centred icon buttons; the labels leave the layout. */
+.ag-side[data-collapsed="true"] .ag-nav-btn { width: 40px; height: 40px; padding: 0; gap: 0; justify-content: center !important; margin-inline: auto; }
+.ag-side[data-collapsed="true"] .ag-nav-label { display: none; }
 .ag-row:hover { background: var(--surface-raised); }
 ::placeholder { color: var(--content-muted); }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--ink); }

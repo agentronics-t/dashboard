@@ -1,8 +1,10 @@
 // The second (and last) model step: write the body of each tool that calls an
 // API or a server action. One batched call; bodies are then checked by code
-// (syntax + the guide's rules) and repaired once if needed.
+// (syntax + the guide's rules), called with sample input in a sandbox
+// (sandbox.ts), and repaired once if either finds a problem.
 
 import ts from "typescript";
+import { trialRun } from "./sandbox.ts";
 import { z } from "zod";
 import { systemPrompt } from "../knowledge/index.ts";
 import type { Llm } from "../llm/gemini.ts";
@@ -18,6 +20,7 @@ const TASK = `Write the body of the execute function for each WebMCP tool below.
 
 Rules (from the guides — follow them exactly):
 - Read arguments from \`input\`, validate them in code (the browser does not validate against inputSchema or apply defaults), and return a structured error value such as { error: "...", hint: "..." } for bad input or failed requests. Never throw for those.
+- Only reject what the schema marks required. A missing optional argument is not an error: do what the site does when that field is left empty (an empty search lists everything, no category means all categories).
 - strategy "fetch": call the site's own API exactly as the existing code does (same method, same relative URL, same body shape and headers), passing \`signal\` to fetch. Return the parsed JSON (or a short summary of it).
 - strategy "server_action": the server action is already imported under its own name; call it with arguments built from \`input\` (mirror how the existing code calls it, FormData included) and return its result.
 - Only re-throw when \`signal?.aborted\` is true.
@@ -88,19 +91,28 @@ export async function writeHandlers(
     ...extra
   });
 
+  // If the model can't answer at all, these tools are left out (the run goes on
+  // with the form and page tools) rather than failing the whole run.
   const first = await llm.json({
     system,
     prompt: `Tools (JSON):\n${JSON.stringify(targets.map((t) => spec(t)))}`,
     schema: RESPONSE_SCHEMA,
     effort: "medium",
     parse: parseResponse
-  });
+  }).catch(() => [] as { name: string; body: string }[]);
   const byName = new Map(first.map((h) => [h.name, h.body]));
 
-  // One repair round for anything that fails the checks.
-  const broken = targets
-    .map((t) => ({ t, body: byName.get(t.name) ?? "", issues: checkHandler(t, byName.get(t.name) ?? "") }))
-    .filter((x) => x.issues.length);
+  // Read the code, then call it like an agent would (sandbox.ts); anything wrong
+  // gets one repair round with the exact problems.
+  const review = async (t: ToolProposal, body: string) => {
+    const read = checkHandler(t, body);
+    if (read.length) return read;
+    const src = context(t, digests);
+    return trialRun(t, body, src?.kind === "server_action" && src.callAs ? { serverAction: src.callAs } : {});
+  };
+  const broken = (await Promise.all(targets.map(async (t) => ({ t, body: byName.get(t.name) ?? "", issues: await review(t, byName.get(t.name) ?? "") })))).filter(
+    (x) => x.issues.length
+  );
   if (broken.length) {
     const fixed = await llm.json({
       system,
@@ -117,7 +129,7 @@ export async function writeHandlers(
   const failed: { name: string; issues: string[] }[] = [];
   for (const t of targets) {
     const body = byName.get(t.name) ?? "";
-    const issues = checkHandler(t, body);
+    const issues = await review(t, body);
     if (issues.length) failed.push({ name: t.name, issues });
     else handlers[t.name] = { body };
   }

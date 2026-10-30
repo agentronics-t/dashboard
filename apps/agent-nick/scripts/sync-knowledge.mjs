@@ -27,7 +27,8 @@ const SDK_PAGES = [
   "concepts/procedural-memory.mdx",
   "authorization.mdx",
   "auth/overview.mdx",
-  "guides/migration-from-raw-webmcp.mdx"
+  "guides/migration-from-raw-webmcp.mdx",
+  "guides/writing-tools.mdx"
 ];
 
 /** MDX → plain Markdown: title from frontmatter, JSX components dropped (callout text kept). */
