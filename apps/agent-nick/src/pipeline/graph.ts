@@ -279,14 +279,15 @@ export function buildPipeline(deps: PipelineDeps, checkpointer: BaseCheckpointSa
     const { handlers, failed } = await writeHandlers(llm, s.approved, s.digests);
     const usable = s.approved.filter((t) => !failed.some((f) => f.name === t.name));
     let kinds = s.siteKinds ?? [];
-    let sdk: SdkInstall | null = null;
-    if (kinds.includes("sdk")) {
-      // The key is limited to the site's address, so the SDK needs one.
-      if (s.siteUrl) sdk = await ensureSdkKey(db, s.tenantId, s.siteUrl);
-      else kinds = kinds.filter((k) => k !== "sdk");
-    }
+    // Every website Agent Nic works on gets its publishable key (or keeps the
+    // one it has): the SDK and the console are the product, and the key is what
+    // the console's test events and the site's real events arrive with — also
+    // when the site already had the SDK, so no "sdk" fix was offered. The key is
+    // limited to the site's address, so it needs one.
+    const sdk: SdkInstall | null = s.siteUrl ? await ensureSdkKey(db, s.tenantId, s.siteUrl) : null;
+    if (!sdk) kinds = kinds.filter((k) => k !== "sdk");
     const gen = await build(s, reader, usable, handlers, kinds, sdk);
-    if (!sdk && (s.siteKinds ?? []).includes("sdk")) gen.manualSteps.push("Add your site's address in the review to connect the Agentronics SDK.");
+    if (!sdk) gen.manualSteps.push("Add your site's address in the console to connect the Agentronics SDK: it needs a key made for that address.");
     const skipped = [...gen.skipped, ...failed.map((f) => ({ name: f.name, reason: `Generated code failed checks: ${f.issues.join("; ")}` }))];
     await r.done("write", `${gen.changes.length} files (${gen.changes.filter((c) => c.before === null).length} new)`, {
       siteFiles: gen.siteFiles ?? {},

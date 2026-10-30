@@ -50,7 +50,6 @@ const RISK: Record<string, { label: string; kind: string }> = {
 const AUTH_LABEL: Record<Auth, string> = { public: "Any agent", signed_in: "Signed-in visitors", scoped: "Scoped grant only" };
 
 /** Site fixes that are written with the site's address in them. */
-const NEEDS_URL = new Set<string>(["sitemap", "structured-data", "sdk"]);
 
 type Choice = Record<string, { approved: boolean; auth: Auth }>;
 
@@ -101,7 +100,8 @@ export function ReviewPanel({
   const [urlTried, setUrlTried] = useState(false);
   const urlRef = useRef<HTMLInputElement>(null);
   const siteCount = siteFixes.filter((f) => siteOn[f.kind]).length;
-  const urlNeeded = siteFixes.some((f) => siteOn[f.kind] && NEEDS_URL.has(f.kind)) && !siteUrl.trim();
+  // Every run needs the address: Agent Nic makes the site's SDK key for it.
+  const urlNeeded = !siteUrl.trim();
 
   const byPage = useMemo(() => {
     const m = new Map<string, ReviewTool[]>();
@@ -140,7 +140,7 @@ export function ReviewPanel({
       const res = await submitReview(
         runId,
         tools.map((t) => ({ id: t.id, approved: (choice[t.id]?.approved ?? false) && allowed(t), auth: choice[t.id]?.auth ?? defaultAuth(t) })),
-        { siteFiles: siteFixes.map((f) => ({ kind: f.kind, approved: !!siteOn[f.kind] })), siteUrl: siteUrl.trim() || null }
+        { siteFiles: siteFixes.map((f) => ({ kind: f.kind, approved: f.kind === "sdk" || !!siteOn[f.kind] })), siteUrl: siteUrl.trim() || null }
       );
       if (!res.ok) return setError(res.error);
       router.refresh();
@@ -180,24 +180,32 @@ export function ReviewPanel({
           </span>
         )}
       </div>
-      {siteFixes.length > 0 && (
-        <section>
+      <section>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--content-muted)", marginBottom: 6 }}>
-            Site fixes · help agents find, read and use your site
+            {siteFixes.length ? "Site fixes · help agents find, read and use your site" : "Your site"}
           </div>
           <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-lg)" }}>
             {siteFixes.map((f, i) => (
               <div key={f.kind} style={{ padding: "12px 14px", borderTop: i ? "1px solid var(--border)" : "none", opacity: siteOn[f.kind] ? 1 : 0.6 }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                  {/* The SDK is what feeds every console page, so it always ships. */}
                   <input
                     type="checkbox"
-                    checked={!!siteOn[f.kind]}
+                    checked={f.kind === "sdk" || !!siteOn[f.kind]}
+                    disabled={f.kind === "sdk"}
                     onChange={(e) => setSiteOn((c) => ({ ...c, [f.kind]: e.target.checked }))}
-                    aria-label={`Include ${f.title}`}
+                    aria-label={f.kind === "sdk" ? `${f.title} (always included)` : `Include ${f.title}`}
                     style={{ marginTop: 3, width: 16, height: 16, accentColor: "var(--brand-solid)" }}
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700 }}>{f.title}</div>
+                    <div style={{ fontWeight: 700 }}>
+                      {f.title}
+                      {f.kind === "sdk" && (
+                        <span className="ag-muted" style={{ fontWeight: 600, fontSize: 12, marginLeft: 8 }}>
+                          Always included: it powers Detect, Auth, Authz, WebMCP Tools, Memory, Observability and Analytics
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 13.5, marginTop: 4 }}>{f.plan}</div>
                     <div className="ag-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
                       Today: {f.found} · <span className="ag-mono">{f.files.join(", ")}</span>
@@ -212,7 +220,7 @@ export function ReviewPanel({
                 </div>
               </div>
             ))}
-            <label style={{ display: "block", padding: "12px 14px", borderTop: "1px solid var(--border)" }}>
+            <label style={{ display: "block", padding: "12px 14px", borderTop: siteFixes.length ? "1px solid var(--border)" : "none" }}>
               <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Your site&apos;s address</span>
               <input
                 ref={urlRef}
@@ -227,13 +235,12 @@ export function ReviewPanel({
               />
               <span className={urlNeeded ? undefined : "ag-muted"} style={{ display: "block", fontSize: 12, marginTop: 4, ...(urlNeeded ? { color: "var(--danger)" } : {}) }}>
                 {urlNeeded
-                  ? "Needed: the sitemap, structured data and the SDK use your site's address."
-                  : `${detectedUrl ? `From ${detectedSource ?? "your repo"}. ` : ""}The sitemap, structured data and the SDK use it.`}
+                  ? "Needed: Agent Nic creates your Agentronics SDK key for this address (the sitemap and structured data use it too)."
+                  : `${detectedUrl ? `From ${detectedSource ?? "your repo"}. ` : ""}Your Agentronics SDK key is made for this address; the sitemap and structured data use it too.`}
               </span>
             </label>
           </div>
         </section>
-      )}
 
       {tools.length > 0 && (
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -310,7 +317,7 @@ export function ReviewPanel({
       ))}
 
       {error && <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>{error}</p>}
-      {urlNeeded && urlTried && <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>Add your site&apos;s address above, or untick the site files that need it.</p>}
+      {urlNeeded && urlTried && <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>Add your site&apos;s address above: Agent Nic creates your SDK key for it.</p>}
       {overLimit && (
         <p style={{ color: "var(--danger)", fontSize: 13, margin: 0 }}>
           {plan.name} includes up to {max} tools per site — deselect {approved - (max ?? 0)} or upgrade.
