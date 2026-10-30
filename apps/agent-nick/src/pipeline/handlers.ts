@@ -18,6 +18,7 @@ const TASK = `Write the body of the execute function for each WebMCP tool below.
 
 Rules (from the guides — follow them exactly):
 - Read arguments from \`input\`, validate them in code (the browser does not validate against inputSchema or apply defaults), and return a structured error value such as { error: "...", hint: "..." } for bad input or failed requests. Never throw for those.
+- Only reject what the schema marks required. A missing optional argument is not an error: do what the site does when that field is left empty (an empty search lists everything, no category means all categories).
 - strategy "fetch": call the site's own API exactly as the existing code does (same method, same relative URL, same body shape and headers), passing \`signal\` to fetch. Return the parsed JSON (or a short summary of it).
 - strategy "server_action": the server action is already imported under its own name; call it with arguments built from \`input\` (mirror how the existing code calls it, FormData included) and return its result.
 - Only re-throw when \`signal?.aborted\` is true.

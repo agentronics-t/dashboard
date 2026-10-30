@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { upgradeFor } from "@agentronics/intel-schema";
 import { Card, CardTitle, Kpi, PageHeader, fmt } from "@/components/ui";
-import { EventFeed, SdkEmpty } from "@/components/sdk";
+import { EventFeed, SdkEmpty, UpgradeCard } from "@/components/sdk";
 import { DescriptionReview, GenerateButton, type DescriptionItem } from "@/components/pillars/DescriptionReview";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { getWorkspacePlan } from "@/lib/billing";
@@ -60,7 +60,12 @@ export default async function ProceduralMemoryPage() {
         action={<LiveRefresh />}
       />
 
-      {items.length === 0 && memory.length === 0 ? (
+      {locked ? (
+        <UpgradeCard feature="Procedural memory" plan={plan.name} next={next?.name ?? null}>
+          Agents read a description of every tool on your site. Memory rewrites them to say more in fewer tokens, and keeps a
+          snapshot of your site that agents can read before they act.
+        </UpgradeCard>
+      ) : items.length === 0 && memory.length === 0 ? (
         <SdkEmpty feature="tool" />
       ) : (
         <>

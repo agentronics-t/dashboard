@@ -532,3 +532,21 @@ describe("Pages Router mount", () => {
     assert.deepEqual(validateChanges(out.changes), []);
   });
 });
+
+describe("select options", () => {
+  it("makes an enum only from literal option values", async () => {
+    const { extractFromSource } = await import("./extract.ts");
+    const src = `export default function S({ cats }) {
+  return (
+    <form action="/search">
+      <input name="q" />
+      <select name="category"><option value="">All</option>{cats.map((d) => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select>
+      <select name="sort"><option value="">Relevance</option><option value="price">Price</option><option value="new">Newest</option></select>
+    </form>
+  );
+}`;
+    const fields = extractFromSource("app/search/page.tsx", src).forms[0]!.fields;
+    assert.equal(fields.find((f) => f.name === "category")!.options, undefined);
+    assert.deepEqual(fields.find((f) => f.name === "sort")!.options, ["price", "new"]);
+  });
+});

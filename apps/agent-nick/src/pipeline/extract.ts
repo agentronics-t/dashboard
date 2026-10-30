@@ -66,6 +66,17 @@ function attrValue(el: JsxTag, name: string): string | null {
   return init.getText();
 }
 
+/** A literal attribute value; null when the attribute is absent, undefined when it's computed. */
+function literalAttr(el: JsxTag, name: string): string | null | undefined {
+  const a = attr(el, name);
+  if (!a) return null;
+  const init = a.initializer;
+  if (!init) return "";
+  if (ts.isStringLiteral(init)) return init.text;
+  if (ts.isJsxExpression(init) && init.expression && ts.isStringLiteralLike(init.expression)) return init.expression.text;
+  return undefined;
+}
+
 function jsxText(node: ts.Node): string {
   const parts: string[] = [];
   const visit = (n: ts.Node) => {
@@ -182,13 +193,24 @@ function readForm(node: ts.Node, el: JsxTag, path: string, sf: ts.SourceFile): O
             ? "select"
             : "textarea";
         if (!["submit", "button", "reset", "hidden", "image"].includes(type)) {
-          const options: string[] = [];
+          let options: string[] = [];
           if (type === "select") {
+            // Only literal values make an enum. Options rendered from data
+            // (<option value={c.slug}>) would turn into the text "c.slug", so a
+            // select with any of those gets no enum at all. Empty values ("All")
+            // just mean "leave it out".
+            let dynamic = false;
             n.forEachChild(function opt(c) {
               const oo = openingOf(c);
-              if (oo && tagName(oo) === "option") options.push(attrValue(oo, "value") ?? jsxText(c));
+              if (oo && tagName(oo) === "option") {
+                const v = literalAttr(oo, "value");
+                if (v === undefined) dynamic = true;
+                else options.push(v ?? jsxText(c).trim());
+              }
+              if (ts.isJsxExpression(c) && c.expression && /<option\b/.test(c.getText())) dynamic = true; // {items.map(i => <option …>)}
               c.forEachChild(opt);
             });
+            options = dynamic ? [] : options.filter((v) => v !== "");
           }
           const id = attrValue(o, "id");
           fields.push({

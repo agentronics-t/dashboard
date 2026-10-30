@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Badge, Card, fmt } from "@/components/ui";
 import type { SdkEventRow } from "@/lib/queries";
 import { LocalTime } from "@/components/LocalTime";
+import { ShowMore } from "@/components/ShowMore";
 
 /** Shown on every SDK page until events arrive. */
 export function SdkEmpty({ feature }: { feature: string }) {
@@ -23,6 +24,23 @@ export function SdkEmpty({ feature }: { feature: string }) {
   );
 }
 
+/** Shown instead of a page the workspace's plan doesn't include. */
+export function UpgradeCard({ feature, plan, next, children }: { feature: string; plan: string; next: string | null; children?: ReactNode }) {
+  return (
+    <Card style={{ textAlign: "center", padding: "44px 18px" }}>
+      <div style={{ fontSize: 15, fontWeight: 700 }}>{feature} isn&apos;t included in the {plan} plan</div>
+      {children && (
+        <div style={{ fontSize: 13, color: "var(--content-muted)", marginTop: 6, maxWidth: 480, marginInline: "auto", lineHeight: 1.5 }}>{children}</div>
+      )}
+      {next && (
+        <a className="ag-btn ag-btn-primary" href="/account" style={{ marginTop: 16, display: "inline-flex" }}>
+          Upgrade to {next}
+        </a>
+      )}
+    </Card>
+  );
+}
+
 const OUTCOME_KIND: Record<string, string> = {
   success: "succeeded",
   blocked: "warning",
@@ -33,7 +51,8 @@ const OUTCOME_KIND: Record<string, string> = {
 export function EventFeed({ events, showType = true }: { events: SdkEventRow[]; showType?: boolean }) {
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      {events.map((e) => (
+      <ShowMore>
+        {events.map((e) => (
         <div
           key={e.id}
           className="ag-row"
@@ -65,7 +84,8 @@ export function EventFeed({ events, showType = true }: { events: SdkEventRow[]; 
             <Badge kind={OUTCOME_KIND[e.outcome] ?? "info"}>{e.outcome}</Badge>
           </div>
         </div>
-      ))}
+        ))}
+      </ShowMore>
     </div>
   );
 }
