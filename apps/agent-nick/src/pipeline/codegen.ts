@@ -35,6 +35,9 @@ export interface CodegenResult {
 /** The SDK's browser build, pinned: loaded from the CDN so the repo needs no new dependency (and no lockfile change). */
 export const SDK_VERSION = "0.7.0";
 export const SDK_CDN_URL = `https://cdn.jsdelivr.net/npm/@agentronics/sdk@${SDK_VERSION}/dist/index.global.js`;
+/** What a site's Content-Security-Policy must allow for the SDK (csp.ts). */
+export const SDK_CDN_ORIGIN = "https://cdn.jsdelivr.net";
+export const SDK_API_ORIGIN = "https://api.agentronics.dev";
 
 interface Edit {
   pos: number;

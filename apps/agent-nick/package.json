@@ -15,6 +15,7 @@
     "@agentronics/intel-schema": "workspace:*",
     "@google-cloud/run": "^3.2.1",
     "@google/genai": "^1.52.0",
+    "@jitl/quickjs-singlefile-cjs-release-sync": "0.32.0",
     "@langchain/core": "1.2.17",
     "@langchain/langgraph": "1.4.21",
     "@langchain/langgraph-checkpoint-postgres": "1.0.6",
@@ -22,6 +23,7 @@
     "fastify": "^5.12.5",
     "google-auth-library": "10.5.0",
     "jose": "^6.2.3",
+    "quickjs-emscripten-core": "0.32.0",
     "typescript": "^5.8.0",
     "zod": "^4.4.3"
   },

@@ -22,7 +22,8 @@
 
 import ts from "typescript";
 import type { Llm } from "../llm/gemini.ts";
-import { importInsertPos, moduleDir, relImport, SDK_CDN_URL, toJs, type CodegenResult } from "./codegen.ts";
+import { importInsertPos, moduleDir, relImport, SDK_API_ORIGIN, SDK_CDN_ORIGIN, SDK_CDN_URL, toJs, type CodegenResult } from "./codegen.ts";
+import { CSP_FILES, patchCspInFile } from "./csp.ts";
 import { parseSource } from "./extract.ts";
 import { applyLabels, findLabelTargets } from "./labels.ts";
 import { htmlToMarkdown, MARKDOWN_RUNTIME, markdownLinkComponent, nextAppMarkdownRoute, nextPagesMarkdownRoute } from "./markdown.ts";
@@ -740,8 +741,27 @@ export async function writeSiteFiles(opts: {
     }
   }
 
-  // The SDK is written with the tools (codegen.ts); record its files under this fix.
-  if (opts.kinds.includes("sdk") && result.sdkFiles?.length) written.sdk = result.sdkFiles;
+  // The SDK is written with the tools (codegen.ts); record its files under this fix,
+  // and let it through the site's Content-Security-Policy, if it has one.
+  if (opts.kinds.includes("sdk") && result.sdkFiles?.length) {
+    written.sdk = [...result.sdkFiles];
+    const unpatched: string[] = [];
+    for (const path of reader.listAll(CSP_FILES).filter((p) => !/(^|\/)(node_modules|dist|build|\.next|out)\//.test(p)).slice(0, 40)) {
+      let missed = false;
+      const ok = await editFile(result, reader, path, "allow the Agentronics SDK in the Content-Security-Policy", (t) => {
+        const r = patchCspInFile(path, t);
+        missed = r.unpatched;
+        return r.text;
+      }, true);
+      if (ok) written.sdk.push(path);
+      else if (missed) unpatched.push(path);
+    }
+    if (unpatched.length) {
+      result.manualSteps.push(
+        `Your site sets a Content-Security-Policy in ${unpatched.map((p) => `\`${p}\``).join(", ")} that Agent Nic couldn't edit safely. Add \`${SDK_CDN_ORIGIN}\` to \`script-src\` and \`${SDK_API_ORIGIN}\` to \`connect-src\`, or the SDK can't load or report.`
+      );
+    }
+  }
   result.siteFiles = written;
 }
 

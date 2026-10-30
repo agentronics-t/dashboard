@@ -550,3 +550,145 @@ describe("select options", () => {
     assert.deepEqual(fields.find((f) => f.name === "sort")!.options, ["price", "new"]);
   });
 });
+
+describe("handler trial run", () => {
+  const tool = (over: Partial<ToolProposal> = {}): ToolProposal => ({
+    page: "/",
+    name: "search_products",
+    kind: "script",
+    sourceId: "c1",
+    strategy: "fetch",
+    description: "Search the catalogue.",
+    inputSchema: { type: "object", properties: { q: { type: "string" }, category: { type: "string" } } },
+    risk: "read",
+    readOnly: true,
+    consequential: false,
+    auth: "public",
+    rationale: "",
+    ...over
+  });
+
+  it("flags a handler that rejects a call with only optional fields (the nekuda case)", async () => {
+    const { trialRun } = await import("./sandbox.ts");
+    const body = `const { q, category } = input ?? {};
+if (!q && !category) return { error: "Provide either q or category." };
+const res = await fetch("/api/search?" + new URLSearchParams({ q: String(q ?? "") }), { signal });
+return await res.json();`;
+    const issues = await trialRun(tool(), body);
+    assert.equal(issues.length, 1);
+    assert.match(issues[0]!, /rejects a valid call \{\} \(no arguments\)/);
+  });
+
+  it("passes a handler that treats optional fields as optional", async () => {
+    const { trialRun } = await import("./sandbox.ts");
+    const body = `const url = new URL("/api/search", location.origin);
+if (typeof input.q === "string" && input.q) url.searchParams.set("q", input.q);
+if (typeof input.category === "string" && input.category) url.searchParams.set("category", input.category);
+const res = await fetch(url, { signal });
+if (!res.ok) return { error: "Search failed", hint: "Try again." };
+return await res.json();`;
+    assert.deepEqual(await trialRun(tool(), body), []);
+  });
+
+  it("flags throwing, endless and API-less handlers, and calls server actions", async () => {
+    const { trialRun } = await import("./sandbox.ts");
+    assert.match((await trialRun(tool(), `throw new Error("boom");`))[0]!, /throws when called/);
+    assert.match((await trialRun(tool(), `while (true) {}`))[0]!, /never finishes/);
+    assert.match((await trialRun(tool(), `return { ok: true };`))[0]!, /never calls the site's API/);
+    const sa = tool({ strategy: "server_action", inputSchema: { type: "object", properties: { email: { type: "string" } }, required: ["email"] } });
+    assert.deepEqual(await trialRun(sa, `const fd = new FormData(); fd.append("email", String(input.email)); return await subscribe(fd);`, { serverAction: "subscribe" }), []);
+  });
+
+  it("can't reach the host from inside the sandbox", async () => {
+    const { trialRun } = await import("./sandbox.ts");
+    const body = `const p = (function () { return this; }).constructor("return typeof process + typeof require + typeof Deno")();
+if (p !== "undefinedundefinedundefined") return { error: "host is reachable: " + p + " required" };
+const res = await fetch("/api/x", { signal });
+return await res.json();`;
+    assert.deepEqual(await trialRun(tool(), body), []);
+  });
+});
+
+describe("schema cleaning", () => {
+  it("drops enums made of code, empty choices and unknown required fields", async () => {
+    const { cleanSchema } = await import("./propose.ts");
+    const out = cleanSchema({
+      type: "object",
+      properties: {
+        category: { type: "string", enum: ["", "d.slug"] },
+        sort: { type: "string", enum: ["", "price", "price", "new"] },
+        size: { type: "weird", description: "  " }
+      },
+      required: ["category", "ghost"]
+    });
+    assert.equal(out.properties.category!.enum, undefined);
+    assert.deepEqual(out.properties.sort!.enum, ["price", "new"]);
+    assert.equal(out.properties.size!.type, "string");
+    assert.equal("description" in out.properties.size!, false);
+    assert.deepEqual(out.required, ["category"]);
+  });
+});
+
+describe("Content-Security-Policy", () => {
+  it("adds the SDK's hosts to a policy, a missing directive copied from default-src", async () => {
+    const { patchPolicy } = await import("./csp.ts");
+    assert.equal(
+      patchPolicy("default-src 'self'; script-src 'self' 'unsafe-inline'"),
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self' https://api.agentronics.dev"
+    );
+    assert.equal(patchPolicy("default-src *"), null);
+    assert.equal(patchPolicy("img-src 'self'"), null);
+  });
+
+  it("edits next.config headers, meta tags and _headers, but never duplicates a directive split across strings", async () => {
+    const { patchCspInFile } = await import("./csp.ts");
+    const next = `module.exports = { async headers() { return [{ source: "/(.*)", headers: [{ key: "Content-Security-Policy", value: "default-src 'self'; connect-src 'self' https://api.stripe.com" }] }]; } };`;
+    const out = patchCspInFile("next.config.js", next).text!;
+    assert.match(out, /connect-src 'self' https:\/\/api\.stripe\.com https:\/\/api\.agentronics\.dev/);
+    assert.match(out, /script-src 'self' https:\/\/cdn\.jsdelivr\.net/);
+
+    const parts = `const csp = ["default-src 'self'", "script-src 'self' 'nonce-x'"].join("; "); headers.set("Content-Security-Policy", csp);`;
+    const p = patchCspInFile("middleware.ts", parts).text!;
+    assert.equal((p.match(/script-src/g) ?? []).length, 1);
+    assert.match(p, /"script-src 'self' 'nonce-x' https:\/\/cdn\.jsdelivr\.net"/);
+
+    const html = `<head><meta http-equiv="Content-Security-Policy" content="default-src 'self'"></head>`;
+    assert.match(patchCspInFile("index.html", html).text!, /content="default-src 'self'; script-src 'self' https:\/\/cdn\.jsdelivr\.net; connect-src 'self' https:\/\/api\.agentronics\.dev"/);
+
+    const headers = "/*\n  Content-Security-Policy: default-src 'self'; script-src 'self'\n";
+    assert.match(patchCspInFile("public/_headers", headers).text!, /script-src 'self' https:\/\/cdn\.jsdelivr\.net; connect-src 'self' https:\/\/api\.agentronics\.dev/);
+
+    const dynamic = "res.setHeader('Content-Security-Policy', `default-src ${self}; script-src ${nonce}`);";
+    assert.deepEqual(patchCspInFile("server.js", dynamic), { text: null, unpatched: true });
+    assert.deepEqual(patchCspInFile("app/layout.tsx", "export default function L() {}"), { text: null, unpatched: false });
+  });
+});
+
+describe("model failures", () => {
+  it("keeps the batches that worked when one fails, and only fails when all do", async () => {
+    const { proposeTools } = await import("./propose.ts");
+    const digest = (i: number): PageDigest => ({
+      route: `/p${i}`,
+      file: `app/p${i}/page.tsx`,
+      title: null,
+      forms: [{ id: `f${i}`, action: "/api/x", method: "post", fields: [{ name: "q", type: "text", label: "Query", required: false }], submitText: "Go", declarativeReady: true }],
+      buttons: [],
+      calls: [],
+      serverActions: []
+    }) as unknown as PageDigest;
+    const digests = Array.from({ length: 400 }, (_, i) => digest(i));
+    let n = 0;
+    const flaky = {
+      usage: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
+      async json<T>(o: { prompt: string; parse: (v: unknown) => T }): Promise<T> {
+        if (n++ === 0) throw new Error("model unavailable");
+        const ids = [...o.prompt.matchAll(/"id":"(f\d+)"/g)].map((m) => m[1]!);
+        return o.parse({ tools: ids.slice(0, 1).map((id) => ({ page: "/", sourceId: id, name: `search ${id}`, kind: "form", strategy: "form", description: "Search.", inputSchemaJson: "{}", risk: "read", rationale: "" })) });
+      }
+    } as unknown as Llm;
+    const tools = await proposeTools(flaky, "x/y", digests);
+    assert.ok(tools.length >= 1);
+    const down = { usage: flaky.usage, json: async () => { throw new Error("model unavailable"); } } as unknown as Llm;
+    await assert.rejects(() => proposeTools(down, "x/y", digests), /model unavailable/);
+  });
+});

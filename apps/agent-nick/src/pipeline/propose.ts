@@ -154,6 +154,37 @@ export function formSchema(form: FormAction, descriptions: Record<string, string
   return { type: "object", properties, ...(required.length ? { required } : {}) };
 }
 
+const JSON_TYPES = new Set(["string", "number", "integer", "boolean", "array", "object"]);
+// A value that is really code (`d.slug`, `${x}`, `cat.id`, `{value}`), not a fixed choice.
+const CODE_LIKE = /^[A-Za-z_$][\w$]*(\??\.[\w$]+)+$|[{}`]|\$\{|=>|\(\)/;
+
+/**
+ * Every tool's input schema goes through here before it ships, whoever wrote
+ * it. What agents can't use is removed rather than passed on: an enum whose
+ * values are code (options rendered from data become the text "d.slug"),
+ * empty or duplicate choices, unknown types, required fields that don't exist.
+ */
+export function cleanSchema(schema: JsonSchema): JsonSchema {
+  const properties: JsonSchema["properties"] = {};
+  for (const [key, raw] of Object.entries(schema.properties ?? {})) {
+    if (!key || typeof raw !== "object" || raw === null) continue;
+    const prop = { ...raw } as JsonSchema["properties"][string];
+    if (!JSON_TYPES.has(String(prop.type))) prop.type = "string";
+    const description = typeof prop.description === "string" ? prop.description.trim() : "";
+    if (description) prop.description = description;
+    else delete prop.description;
+    if ("enum" in prop) {
+      const values = Array.isArray(prop.enum) ? prop.enum.map((v) => String(v).trim()) : [];
+      const choices = [...new Set(values.filter((v) => v !== ""))];
+      if (!choices.length || choices.some((v) => CODE_LIKE.test(v))) delete prop.enum;
+      else prop.enum = choices;
+    }
+    properties[key] = prop;
+  }
+  const required = [...new Set((schema.required ?? []).filter((r) => r in properties))];
+  return { type: "object", properties, ...(required.length ? { required } : {}) };
+}
+
 function parseSchema(json: string): JsonSchema {
   const fallback: JsonSchema = { type: "object", properties: {} };
   try {
@@ -202,7 +233,7 @@ export function normalize(raw: RawTool[], digests: PageDigest[]): ToolProposal[]
     for (let i = 2; names.has(name); i++) name = `${snake(t.name).slice(0, 60)}_${i}`;
 
     const fieldDescriptions = Object.fromEntries((t.fieldDescriptions ?? []).map((f) => [f.field, f.description.trim()]));
-    const inputSchema = kind === "form" && action.form ? formSchema(action.form, fieldDescriptions) : parseSchema(t.inputSchemaJson);
+    const inputSchema = cleanSchema(kind === "form" && action.form ? formSchema(action.form, fieldDescriptions) : parseSchema(t.inputSchemaJson));
 
     names.add(name);
     sources.add(t.sourceId);
@@ -229,7 +260,9 @@ export function normalize(raw: RawTool[], digests: PageDigest[]): ToolProposal[]
 export async function proposeTools(llm: Llm, siteName: string, digests: PageDigest[]): Promise<ToolProposal[]> {
   const system = systemPrompt(TASK);
   const batches = batchDigests(digests);
-  const results = await Promise.all(
+  // One batch the model fails on (after its retries) costs that batch's pages,
+  // not the whole run; only if every batch fails is it an error.
+  const settled = await Promise.allSettled(
     batches.map((batch) =>
       llm.json({
         system,
@@ -240,5 +273,7 @@ export async function proposeTools(llm: Llm, siteName: string, digests: PageDige
       })
     )
   );
-  return normalize(results.flat(), digests);
+  const ok = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  if (!ok.length && settled.length) throw (settled[0] as PromiseRejectedResult).reason;
+  return normalize(ok.flat(), digests);
 }

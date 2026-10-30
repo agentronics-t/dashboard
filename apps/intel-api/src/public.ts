@@ -29,8 +29,10 @@ export interface PublicDeps {
     tenantId: string,
     siteId: string
   ): Promise<{ policies: unknown[]; toolDescriptions: Record<string, string>; siteMemory: Record<string, unknown> | null; fetchedAt: string }>;
-  /** Writes per key per minute. Default 300. */
+  /** Writes per minute per key and visitor (client IP). Default 120. */
   writesPerMinute?: number;
+  /** Writes per minute per key, all visitors together. Default 20000. */
+  keyWritesPerMinute?: number;
 }
 
 interface ResolvedKey {
@@ -59,11 +61,19 @@ function cached(req: FastifyRequest, reply: FastifyReply, body: unknown) {
   return reply.send(body);
 }
 
+/** The visitor's address: the first X-Forwarded-For hop (Cloud Run's front end sets it), else the socket. */
+function clientIp(req: FastifyRequest): string {
+  const fwd = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim();
+  return first || req.ip || "unknown";
+}
+
 export function registerPublicRoutes(app: FastifyInstance, deps: PublicDeps) {
   const { db } = deps;
   const keyCache = new Map<string, { value: ResolvedKey | null; until: number }>();
   const writes = new Map<string, { windowStart: number; count: number }>();
-  const writeLimit = deps.writesPerMinute ?? 300;
+  const writeLimit = deps.writesPerMinute ?? 120;
+  const keyWriteLimit = deps.keyWritesPerMinute ?? 20_000;
 
   async function resolveKey(key: string): Promise<ResolvedKey | null> {
     const hit = keyCache.get(key);
@@ -87,10 +97,20 @@ export function registerPublicRoutes(app: FastifyInstance, deps: PublicDeps) {
       reply.status(403).send({ error: "origin_not_allowed", detail: "Add this site's origin to the publishable key in the console (Settings)." });
       return false;
     }
+    // A publishable key is shared by every visitor of a site, so the limit is
+    // per visitor (client IP) — one busy page can't use up a whole site's —
+    // with a much higher ceiling for the key as a whole.
     const now = Date.now();
-    const w = writes.get(key.id);
-    if (!w || now - w.windowStart > 60_000) writes.set(key.id, { windowStart: now, count: 1 });
-    else if (++w.count > writeLimit) {
+    const over = (id: string, limit: number) => {
+      const w = writes.get(id);
+      if (!w || now - w.windowStart > 60_000) {
+        if (writes.size > 50_000) writes.clear();
+        writes.set(id, { windowStart: now, count: 1 });
+        return false;
+      }
+      return ++w.count > limit;
+    };
+    if (over(`${key.id}|${clientIp(req)}`, writeLimit) || over(key.id, keyWriteLimit)) {
       reply.status(429).header("retry-after", "60").send({ error: "rate_limited" });
       return false;
     }
