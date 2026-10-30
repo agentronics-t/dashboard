@@ -7,15 +7,29 @@
 #
 # Usage:
 #   REGION=us-east1 ./infra/deploy-api.sh <PROJECT_ID> <CLERK_ISSUER> <CLERK_JWKS_URL>
+#   ./infra/deploy-api.sh        # redeploy: the gcloud project, Clerk settings from the running service
 #
 # Requires: gcloud auth login; infra/bring-up.sh (or its foundation step) run once.
 
 set -euo pipefail
 
+REGION="${REGION:-us-east1}"
+
+# No arguments: redeploy with the Clerk settings the running service already has.
+if [[ $# -eq 0 ]]; then
+  PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
+  [[ -n "${PROJECT_ID}" ]] || { echo "No arguments and no gcloud project set (gcloud config set project …)." >&2; exit 1; }
+  current() {
+    gcloud run services describe intel-api --region "${REGION}" --project "${PROJECT_ID}" \
+      --format=json | python3 -c "import json,sys; e={v['name']: v.get('value') for v in json.load(sys.stdin)['spec']['template']['spec']['containers'][0].get('env', [])}; print(e.get(sys.argv[1]) or '')" "$1"
+  }
+  set -- "${PROJECT_ID}" "$(current CLERK_ISSUER)" "$(current CLERK_JWKS_URL)"
+  echo "Redeploying intel-api in ${PROJECT_ID} (${REGION}) with its current settings."
+fi
+
 PROJECT_ID="${1:?Usage: deploy-api.sh <PROJECT_ID> <CLERK_ISSUER> <CLERK_JWKS_URL>}"
 CLERK_ISSUER="${2:?missing CLERK_ISSUER (https://clerk.<root-domain>)}"
 CLERK_JWKS_URL="${3:?missing CLERK_JWKS_URL (https://clerk.<root-domain>/.well-known/jwks.json)}"
-REGION="${REGION:-us-east1}"
 SERVICE="intel-api"
 SA="intel-api@${PROJECT_ID}.iam.gserviceaccount.com"
 SCHEDULER_SA="intel-scheduler@${PROJECT_ID}.iam.gserviceaccount.com"
