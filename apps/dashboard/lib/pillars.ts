@@ -2,7 +2,7 @@
 // Procedural memory, Observability, Analytics). Tenant-scoped, server-only.
 import "server-only";
 import { schema } from "@agentronics/intel-schema/db";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "./tenant";
 
 const since = (days: number) => new Date(Date.now() - days * 86400_000);
@@ -155,29 +155,111 @@ export interface ToolRow {
   updatedAt: Date;
 }
 
+/** "search_products" → "Search products", the title Agent Nic's code registers. */
+const toolTitle = (name: string) => {
+  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").split(/[_\-.\s]+/).filter(Boolean).join(" ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+const hostOf = (url: unknown): string | null => {
+  if (typeof url !== "string" || !url) return null;
+  try {
+    return new URL(/^https?:\/\//.test(url) ? url : `https://${url}`).hostname;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The tools each live Agent Nic site has: the ones its last merged pull request
+ * wrote, by the SDK site id (the site's hostname) they report under.
+ */
+async function agentNicLiveTools(tenantId: string) {
+  const s = schema.agentNickSites;
+  const r = schema.agentNickRuns;
+  const sites = await db()
+    .select({ runId: s.lastRunId, liveAt: s.liveAt, homepage: s.homepage, decision: r.decision })
+    .from(s)
+    .innerJoin(r, eq(r.id, s.lastRunId))
+    .where(and(eq(s.tenantId, tenantId), sql`${s.liveSha} is not null`));
+  const live = sites
+    .map((x) => ({ ...x, siteId: hostOf((x.decision as { siteUrl?: unknown } | null)?.siteUrl) ?? hostOf(x.homepage) }))
+    .filter((x): x is typeof x & { siteId: string; runId: string } => !!x.siteId && !!x.runId);
+  if (!live.length) return [];
+  const t = schema.agentNickTools;
+  const tools = await db()
+    .select({ runId: t.runId, name: t.name, description: t.description, page: t.page, inputSchema: t.inputSchema, readOnly: t.readOnly, consequential: t.consequential, createdAt: t.createdAt })
+    .from(t)
+    .where(and(inArray(t.runId, live.map((x) => x.runId)), eq(t.approved, true)));
+  return live.map((site) => ({ ...site, tools: tools.filter((x) => x.runId === site.runId) }));
+}
+
+/**
+ * Every tool your sites expose, one list for every console page. For a site
+ * Agent Nic manages, that's the tools its last merged pull request wrote (on
+ * all their pages, also ones no browser has opened yet), with the status
+ * browsers reported; plus any tool a browser registered there since the merge
+ * (written by hand). Tools an earlier run wrote and the merge replaced are left
+ * out. Other sites: what their browsers reported.
+ */
 export async function getTools(tenantId: string): Promise<ToolRow[]> {
   const t = schema.sdkToolRegistry;
-  const rows = await db()
-    .select({
-      siteId: t.siteId,
-      toolName: t.toolName,
-      title: t.title,
-      description: t.description,
-      groupName: t.groupName,
-      page: t.page,
-      inputSchema: t.inputSchema,
-      outputSchema: t.outputSchema,
-      annotations: t.annotations,
-      tokens: t.tokens,
-      status: t.status,
-      statusError: t.statusError,
-      statusAt: t.statusAt,
-      updatedAt: t.updatedAt
-    })
-    .from(t)
-    .where(eq(t.tenantId, tenantId))
-    .orderBy(t.siteId, t.page, t.toolName);
-  return rows.map((r) => ({ ...r, annotations: (r.annotations as Record<string, boolean> | null) ?? null }));
+  const [rows, nic] = await Promise.all([
+    db()
+      .select({
+        siteId: t.siteId,
+        toolName: t.toolName,
+        title: t.title,
+        description: t.description,
+        groupName: t.groupName,
+        page: t.page,
+        inputSchema: t.inputSchema,
+        outputSchema: t.outputSchema,
+        annotations: t.annotations,
+        tokens: t.tokens,
+        status: t.status,
+        statusError: t.statusError,
+        statusAt: t.statusAt,
+        updatedAt: t.updatedAt
+      })
+      .from(t)
+      .where(eq(t.tenantId, tenantId)),
+    agentNicLiveTools(tenantId)
+  ]);
+  const reported = rows.map((r) => ({ ...r, annotations: (r.annotations as Record<string, boolean> | null) ?? null }));
+  const managed = new Map(nic.map((site) => [site.siteId, site]));
+  const out: ToolRow[] = reported.filter((r) => {
+    const site = managed.get(r.siteId);
+    if (!site) return true;
+    if (site.tools.some((x) => x.name === r.toolName)) return false; // added below, with its page
+    // Written by hand: a browser registered it on the site since the merge.
+    return !!site.liveAt && r.status !== "unknown" && !!r.statusAt && r.statusAt > site.liveAt;
+  });
+  for (const site of nic) {
+    for (const tool of site.tools) {
+      const seen = reported.find((r) => r.siteId === site.siteId && r.toolName === tool.name);
+      const annotations = { readOnlyHint: tool.readOnly, ...(tool.consequential ? { consequentialHint: true } : {}) };
+      const title = toolTitle(tool.name);
+      out.push({
+        siteId: site.siteId,
+        toolName: tool.name,
+        title: seen?.title ?? title,
+        description: seen?.description ?? tool.description,
+        groupName: seen?.groupName ?? null,
+        page: tool.page === "*" ? null : tool.page,
+        inputSchema: seen?.inputSchema ?? tool.inputSchema,
+        outputSchema: seen?.outputSchema ?? null,
+        annotations: seen?.annotations ?? annotations,
+        // Same estimate as the SDK's (≈ characters / 4 of what agents receive).
+        tokens: seen?.tokens || Math.ceil(JSON.stringify({ name: tool.name, title, description: tool.description, inputSchema: tool.inputSchema, annotations }).length / 4),
+        status: seen?.status ?? "unknown",
+        statusError: seen?.statusError ?? null,
+        statusAt: seen?.statusAt ?? null,
+        updatedAt: seen?.updatedAt ?? tool.createdAt
+      });
+    }
+  }
+  return out.sort((a, b) => a.siteId.localeCompare(b.siteId) || (a.page ?? "").localeCompare(b.page ?? "") || a.toolName.localeCompare(b.toolName));
 }
 
 export interface ToolHealth {
