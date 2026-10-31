@@ -10,7 +10,7 @@ const STATUS: Record<string, { label: string; kind: string; help: string }> = {
   callable: { label: "Callable", kind: "succeeded", help: "Registered with document.modelContext" },
   failed: { label: "Failed", kind: "failed", help: "The browser rejected the registration" },
   disabled: { label: "Disabled", kind: "queued", help: "Turned off in code" },
-  unknown: { label: "Not seen", kind: "queued", help: "Synced, but no browser has registered it yet" }
+  unknown: { label: "Not seen", kind: "queued", help: "In your code, but no browser has opened its page since it went live" }
 };
 
 const HINTS: Array<[string, string]> = [

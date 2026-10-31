@@ -232,7 +232,8 @@ export function buildServer(deps: ServerDeps) {
             schema.sdkToolRegistry.siteId,
             schema.sdkToolRegistry.toolName
           ],
-          set: { ...row, updatedAt: new Date() }
+          // The SDK reports tools without their page; keep the one Agent Nic recorded.
+          set: { ...row, page: sql`coalesce(excluded.page, ${schema.sdkToolRegistry.page})`, updatedAt: new Date() }
         });
     }
   }

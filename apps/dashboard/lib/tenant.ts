@@ -33,11 +33,16 @@ export const getTenantId = cache(async (): Promise<string> => {
   if (!userId) redirect("/sign-in");
   const key = `user:${userId}`;
 
+  const started = Date.now();
   const [existing] = await db()
     .select({ id: schema.tenants.id })
     .from(schema.tenants)
     .where(eq(schema.tenants.clerkOrgId, key))
     .limit(1);
+  // The first query of a page: slow here means the database was waking up (Neon
+  // scales to zero after 5 idle minutes) or a new connection was opened.
+  const ms = Date.now() - started;
+  if (ms > 400) console.warn(`[slow-db] workspace lookup took ${ms} ms`);
   const id =
     existing?.id ??
     (

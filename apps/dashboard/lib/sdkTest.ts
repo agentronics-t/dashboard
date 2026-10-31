@@ -10,7 +10,7 @@
 
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { schema } from "@agentronics/intel-schema/db";
 import type { SdkTraceEvent } from "@agentronics/intel-schema";
 import { db } from "./tenant";
@@ -82,15 +82,18 @@ interface ToolDescriptor {
 async function siteTools(agentNickSiteId: string | null): Promise<ToolDescriptor[]> {
   const rows = agentNickSiteId
     ? await db()
-        .select({ name: schema.agentNickTools.name, description: schema.agentNickTools.description, page: schema.agentNickTools.page, inputSchema: schema.agentNickTools.inputSchema, readOnly: schema.agentNickTools.readOnly })
+        .select({ runId: schema.agentNickTools.runId, name: schema.agentNickTools.name, description: schema.agentNickTools.description, page: schema.agentNickTools.page, inputSchema: schema.agentNickTools.inputSchema, readOnly: schema.agentNickTools.readOnly })
         .from(schema.agentNickTools)
+        // Runs that opened a pull request: before that, every proposed tool still counts as approved.
+        .innerJoin(schema.agentNickRuns, and(eq(schema.agentNickRuns.id, schema.agentNickTools.runId), isNotNull(schema.agentNickRuns.prNumber)))
         .where(and(eq(schema.agentNickTools.siteId, agentNickSiteId), eq(schema.agentNickTools.approved, true)))
         .orderBy(desc(schema.agentNickTools.createdAt))
-        .limit(40)
+        .limit(500)
     : [];
-  const seen = new Set<string>();
+  // Only the latest run's tools: an earlier run's (renamed or dropped since) aren't on the site any more.
+  const latest = rows[0]?.runId;
   const real = rows
-    .filter((r) => !seen.has(r.name) && seen.add(r.name))
+    .filter((r) => r.runId === latest)
     .map((r) => ({ name: r.name, description: r.description, page: r.page === "*" ? null : r.page, inputSchema: r.inputSchema as Record<string, unknown>, annotations: { readOnlyHint: r.readOnly } }));
   if (real.length) return real;
   return [

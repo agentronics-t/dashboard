@@ -33,7 +33,10 @@ export interface CodegenResult {
 }
 
 /** The SDK's browser build, pinned: loaded from the CDN so the repo needs no new dependency (and no lockfile change). */
-export const SDK_VERSION = "0.7.1";
+// The latest 0.7.x: SDK fixes reach every site without a new pull request (the
+// SDK's release purges jsDelivr's cache of the range). The minimum is 0.7.2,
+// whose WebMCP calls work however an agent calls them.
+export const SDK_VERSION = "0.7";
 export const SDK_CDN_URL = `https://cdn.jsdelivr.net/npm/@agentronics/sdk@${SDK_VERSION}/dist/index.global.js`;
 /** What a site's Content-Security-Policy must allow for the SDK (csp.ts). */
 export const SDK_CDN_ORIGIN = "https://cdn.jsdelivr.net";
